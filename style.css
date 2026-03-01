@@ -70,8 +70,8 @@ header h1 { margin-bottom: 0.2rem; }
   pointer-events: none;
 }
 
-.nato-symbol { pointer-events: all; }
-.nato-symbol.clickable { cursor: pointer; }
+.nato-symbol { pointer-events: none; }
+
 .nato-symbol.active-move-source .unit-frame { filter: drop-shadow(0 0 3px rgba(245, 255, 95, 0.9)); }
 
 .unit-frame { fill: #ffffff; stroke-width: 2; rx: 4; ry: 4; }
