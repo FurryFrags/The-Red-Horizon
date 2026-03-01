@@ -383,6 +383,11 @@ function renderMap() {
       .filter(Boolean)
   );
 
+  relevant.forEach((feature) => {
+    const iso = PROVINCE_CATALOG[feature.properties.id]?.iso;
+    if (iso) focusNationIsos.add(iso);
+  });
+
   const backdropFeatures = Array.from(focusNationIsos).flatMap((iso) => {
     const countryGeoJson = state.countryFeaturesByIso[iso];
     return (countryGeoJson?.features || []).map((feature, index) => ({
@@ -416,6 +421,11 @@ function renderMap() {
         .map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`)
         .join(' ') + ' Z')
       .join(' ');
+
+    const backdropPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    backdropPath.setAttribute('d', pathData);
+    backdropPath.classList.add('nation-backdrop');
+    mapSvg.appendChild(backdropPath);
 
     const borderPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     borderPath.setAttribute('d', pathData);
