@@ -18,6 +18,6 @@ Then open <http://localhost:4173>.
 
 ## Data
 
+- `data/act1_map.geojson`: GeoJSON province polygons by nation.
 - `data/missions.json`: Story + mission objectives, control setup, and adjacency graph.
-- Province polygons are fetched in real time from the [geoBoundaries](https://www.geoboundaries.org/) ADM1 API and mapped to mission provinces.
 
