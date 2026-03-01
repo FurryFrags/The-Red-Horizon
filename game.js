@@ -62,12 +62,6 @@ const UNIT_SYMBOL_BY_TYPE = {
   naval: '⚓'
 };
 
-const UNIT_SYMBOL_BY_TYPE = {
-  ground: '⊞',
-  air: '✈',
-  naval: '⚓'
-};
-
 const LEGACY_SYMBOL_MAP = { G: '⊞', A: '✈', N: '⚓' };
 
 function getUnitDisplaySymbol(unit) {
