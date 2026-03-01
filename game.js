@@ -725,36 +725,45 @@ async function handleAttack() {
 
 
 async function executeMoveCommand(from, to) {
+  if (state.phase !== 'NATO') {
+    log('You can only issue movement orders during the NATO phase.');
+    state.pendingMoveFrom = null;
+    renderMap();
+    return;
+  }
+
   state.pendingMoveFrom = null;
-  const toSide = state.control[to] || 'neutral';
-  const movePath = findPath(from, to, (neighbor) => state.control[neighbor] !== 'enemy');
+  if ((state.units[from] || []).length === 0) {
+    log('No units available to move.');
+    renderMap();
+    return;
+  }
 
-  if (toSide === 'enemy') {
-    const attackPath = findPath(from, to, (neighbor, current, goal) => {
-      if (neighbor === goal) return true;
-      return state.control[neighbor] === 'nato';
-    });
-    if (!attackPath || attackPath.length < 2) {
-      log(`No attack lane from ${state.featuresById[from].properties.name} to ${state.featuresById[to].properties.name}.`);
-      renderMap();
-      return;
+  const destinationDefended = isEnemyProvinceDefended(to);
+  const path = findPath(from, to, (neighbor, current, goal) => {
+    if (neighbor === goal) return true;
+    return !isEnemyProvinceDefended(neighbor);
+  });
+
+  if (!path || path.length < 2) {
+    log(`No valid movement corridor from ${state.featuresById[from].properties.name} to ${state.featuresById[to].properties.name}.`);
+    renderMap();
+    return;
+  }
+
+  if (destinationDefended) {
+    const marchPath = path.slice(0, -1);
+    if (marchPath.length > 1) {
+      await moveUnitsAlongPathOverTime(marchPath, 'nato');
+      log(`Advanced via ${formatPathNames(marchPath)}.`);
     }
 
-    const stagingProvince = attackPath[attackPath.length - 2];
-    if (stagingProvince !== from) {
-      transferUnits(from, stagingProvince, 'nato', attackPath.slice(0, -1));
-      log(`Redeployed via ${formatPathNames(attackPath.slice(0, -1))}.`);
-    }
+    const stagingProvince = path[path.length - 2];
     await resolveBattleOverTime(stagingProvince, to, 'nato');
     state.selected = stagingProvince;
   } else {
-    if (!movePath || movePath.length < 2) {
-      log('No safe route for movement.');
-      renderMap();
-      return;
-    }
-    transferUnits(from, to, 'nato', movePath);
-    log(`Moved forces along ${formatPathNames(movePath)}.`);
+    await moveUnitsAlongPathOverTime(path, 'nato');
+    log(`Moved forces along ${formatPathNames(path)}.`);
     state.selected = to;
   }
 
@@ -762,6 +771,54 @@ async function executeMoveCommand(from, to) {
   renderProvinceInfo(state.selected);
   buildTargetOptions(state.selected);
   checkVictory();
+}
+
+function isEnemyProvinceDefended(provinceId) {
+  return state.control[provinceId] === 'enemy' && (state.units[provinceId] || []).length > 0;
+}
+
+async function moveUnitsAlongPathOverTime(path, side) {
+  if (!path || path.length < 2) return;
+
+  for (let i = 1; i < path.length; i += 1) {
+    const fromId = path[i - 1];
+    const toId = path[i];
+    transferUnitsSingleStep(fromId, toId, side);
+    renderMap();
+    if (state.selected) renderProvinceInfo(state.selected);
+    await sleep(220);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function transferUnitsSingleStep(fromId, toId, side) {
+  const moving = state.units[fromId] || [];
+  if (!moving.length) return;
+
+  state.units[fromId] = [];
+  if (!state.units[toId]) state.units[toId] = [];
+
+  const toSide = state.control[toId] || 'neutral';
+  if (toSide !== side) {
+    const defenders = state.units[toId] || [];
+    if (defenders.length > 0) {
+      log(`Movement halted at ${state.featuresById[toId].properties.name}: defended by enemy forces.`);
+      state.units[fromId] = moving;
+      return;
+    }
+
+    state.control[toId] = side;
+    if (toSide === 'enemy') {
+      log(`${state.featuresById[toId].properties.name} was unguarded and is now captured while advancing.`);
+    }
+  }
+
+  state.units[toId] = state.units[toId].concat(
+    moving.map((u) => ({ ...u, org: Math.max(10, u.org - 2) }))
+  );
 }
 
 function transferUnits(fromId, toId, side, path) {
