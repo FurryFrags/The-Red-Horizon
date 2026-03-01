@@ -88,6 +88,7 @@ const state = {
   dragMoveActive: false,
   projectedById: {},
   countryFeaturesByIso: {},
+  provinceIsoById: {},
   groupedDivisions: true,
   combatTimer: null
 };
@@ -137,6 +138,7 @@ async function init() {
     const loadedFeatures = await loadProvinceFeatures(missionData.missions);
     state.featuresById = loadedFeatures.featuresById;
     state.countryFeaturesByIso = loadedFeatures.countryFeaturesByIso;
+    state.provinceIsoById = loadedFeatures.provinceIsoById;
 
     state.story = missionData.story;
     state.missions = missionData.missions;
@@ -190,6 +192,8 @@ async function loadProvinceFeatures(missions) {
   }));
 
   const featuresById = {};
+  const provinceIsoById = {};
+  const mappedFeatureKeys = new Set();
   requiredProvinceIds.forEach((provinceId) => {
     const config = PROVINCE_CATALOG[provinceId];
     if (!config) {
@@ -201,6 +205,9 @@ async function loadProvinceFeatures(missions) {
       throw new Error(`Could not match online province for ${provinceId} in ${COUNTRY_BOUNDARY_CATALOG[config.iso]}.`);
     }
 
+    const sourceName = readFeatureName(sourceFeature);
+    mappedFeatureKeys.add(`${config.iso}::${sourceName.toLowerCase()}`);
+
     featuresById[provinceId] = {
       type: 'Feature',
       geometry: sourceFeature.geometry,
@@ -209,12 +216,58 @@ async function loadProvinceFeatures(missions) {
         name: config.names[0],
         nation: COUNTRY_BOUNDARY_CATALOG[config.iso],
         terrain: config.terrain,
-        sourceName: readFeatureName(sourceFeature)
+        sourceName
       }
     };
+    provinceIsoById[provinceId] = config.iso;
   });
 
-  return { featuresById, countryFeaturesByIso: boundaryByCountry };
+  Array.from(requiredCountries).forEach((iso) => {
+    const countryGeoJson = boundaryByCountry[iso];
+    (countryGeoJson?.features || []).forEach((feature, index) => {
+      const sourceName = readFeatureName(feature) || `${COUNTRY_BOUNDARY_CATALOG[iso]} Province ${index + 1}`;
+      const featureKey = `${iso}::${sourceName.toLowerCase()}`;
+      if (mappedFeatureKeys.has(featureKey)) return;
+
+      const generatedId = buildGeneratedProvinceId(iso, sourceName, index);
+      if (featuresById[generatedId]) return;
+
+      featuresById[generatedId] = {
+        type: 'Feature',
+        geometry: feature.geometry,
+        properties: {
+          id: generatedId,
+          name: sourceName,
+          nation: COUNTRY_BOUNDARY_CATALOG[iso],
+          terrain: inferTerrainFromName(sourceName),
+          sourceName
+        }
+      };
+      provinceIsoById[generatedId] = iso;
+    });
+  });
+
+  return { featuresById, countryFeaturesByIso: boundaryByCountry, provinceIsoById };
+}
+
+function buildGeneratedProvinceId(iso, name, index) {
+  const slug = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return `${iso.toLowerCase()}_${slug || `province_${index + 1}`}`;
+}
+
+function inferTerrainFromName(name) {
+  const lower = name.toLowerCase();
+  if (/(coast|bay|sea|gulf|shore)/.test(lower)) return 'coastal';
+  if (/(mount|highland|alborz|zagros|rocky|ridge)/.test(lower)) return 'mountain';
+  if (/(desert|sahara|kavir|lut)/.test(lower)) return 'desert';
+  if (/(hill|upland)/.test(lower)) return 'hills';
+  return 'plains';
 }
 
 async function fetchCountryProvinces(iso) {
@@ -388,15 +441,15 @@ function loadMission(index) {
   nextMissionBtn.classList.add('hidden');
   toggleGroupBtn.textContent = state.groupedDivisions ? 'Ungroup Divisions View' : 'Group Divisions View';
 
-  const missionProvinceIds = new Set(Object.keys(mission.adjacency || {}));
-  Object.values(mission.adjacency || {}).forEach((targets) => targets.forEach((targetId) => missionProvinceIds.add(targetId)));
+  const missionProvinceIds = collectMissionProvinceIds(mission);
+  mission.adjacency = buildProvinceAdjacency(Array.from(missionProvinceIds));
 
   missionProvinceIds.forEach((id) => {
     const allegiance = mission.allegiances?.[id]
       || (mission.playerControlled || []).includes(id) && 'nato'
       || (mission.enemyControlled || []).includes(id) && 'enemy'
       || (mission.neutral || []).includes(id) && 'nato'
-      || 'enemy';
+      || 'neutral';
 
     state.control[id] = allegiance;
     state.units[id] = allegiance === 'enemy' || allegiance === 'nato' ? createProvinceUnits(allegiance, id) : [];
@@ -456,8 +509,7 @@ function renderMap() {
   state.projectedById = {};
 
   const mission = state.currentMission;
-  const missionProvinceIds = new Set(Object.keys(mission.adjacency || {}));
-  Object.values(mission.adjacency || {}).forEach((targets) => targets.forEach((targetId) => missionProvinceIds.add(targetId)));
+  const missionProvinceIds = collectMissionProvinceIds(mission);
 
   const relevant = Array.from(missionProvinceIds)
     .map((id) => state.featuresById[id])
@@ -470,7 +522,7 @@ function renderMap() {
   );
 
   relevant.forEach((feature) => {
-    const iso = PROVINCE_CATALOG[feature.properties.id]?.iso;
+    const iso = state.provinceIsoById[feature.properties.id] || PROVINCE_CATALOG[feature.properties.id]?.iso;
     if (iso) focusNationIsos.add(iso);
   });
 
@@ -712,7 +764,7 @@ function buildTargetOptions(provinceId) {
   if (state.phase !== 'NATO' || side !== 'nato') return;
 
   const neighbors = state.currentMission.adjacency[provinceId] || [];
-  const hostile = neighbors.filter((n) => state.control[n] === 'enemy');
+  const hostile = neighbors.filter((n) => state.control[n] === 'enemy' && (state.units[n] || []).length > 0);
   hostile.forEach((n) => {
     const option = document.createElement('option');
     option.value = n;
@@ -761,24 +813,15 @@ async function handleAttack() {
     return;
   }
 
-  const attackRoute = findPath(from, to, (neighbor, current, goal) => {
-    if (neighbor === goal) return state.control[goal] === 'enemy';
-    return state.control[neighbor] === 'nato';
-  });
-
-  if (!attackRoute || attackRoute.length < 2) {
-    log('No viable path to attack target through connected friendly provinces.');
+  const neighboring = (state.currentMission.adjacency[from] || []).includes(to);
+  if (!neighboring) {
+    log('Combat can only start when your division is in a province touching the enemy province.');
     return;
   }
 
-  const stagingProvince = attackRoute[attackRoute.length - 2];
-  if (stagingProvince !== from) {
-    transferUnits(from, stagingProvince, 'nato', attackRoute.slice(0, -1));
-  }
-
-  await resolveBattleOverTime(stagingProvince, to, 'nato');
+  await resolveBattleOverTime(from, to, 'nato');
   renderMap();
-  renderProvinceInfo(stagingProvince);
+  renderProvinceInfo(from);
   checkVictory();
 }
 
@@ -817,7 +860,7 @@ async function executeMoveCommand(from, to) {
     }
 
     const stagingProvince = path[path.length - 2];
-    await resolveBattleOverTime(stagingProvince, to, 'nato');
+    log(`Contact established at ${state.featuresById[stagingProvince].properties.name}. Attack manually to begin combat with ${state.featuresById[to].properties.name}.`);
     state.selected = stagingProvince;
   } else {
     await moveUnitsAlongPathOverTime(path, 'nato');
@@ -1084,7 +1127,7 @@ function log(message) {
 function computeCountryControl(provinceIds) {
   const tallies = {};
   provinceIds.forEach((provinceId) => {
-    const iso = PROVINCE_CATALOG[provinceId]?.iso;
+    const iso = state.provinceIsoById[provinceId] || PROVINCE_CATALOG[provinceId]?.iso;
     if (!iso) return;
     if (!tallies[iso]) tallies[iso] = { nato: 0, enemy: 0, neutral: 0 };
     const side = state.control[provinceId] || 'neutral';
@@ -1119,6 +1162,77 @@ function findPath(fromId, toId, passable) {
   }
 
   return null;
+}
+
+function collectMissionProvinceIds(mission) {
+  const focusNationIsos = new Set(
+    (mission.focusNations || [])
+      .map((nation) => Object.entries(COUNTRY_BOUNDARY_CATALOG).find(([, name]) => name === nation)?.[0])
+      .filter(Boolean)
+  );
+
+  ['playerControlled', 'enemyControlled', 'neutral', 'objectives'].forEach((key) => {
+    (mission[key] || []).forEach((provinceId) => {
+      const iso = state.provinceIsoById[provinceId] || PROVINCE_CATALOG[provinceId]?.iso;
+      if (iso) focusNationIsos.add(iso);
+    });
+  });
+
+  return new Set(
+    Object.keys(state.featuresById).filter((provinceId) => focusNationIsos.has(state.provinceIsoById[provinceId]))
+  );
+}
+
+function buildProvinceAdjacency(provinceIds) {
+  const adjacency = Object.fromEntries(provinceIds.map((id) => [id, []]));
+  const enriched = provinceIds.map((id) => {
+    const rings = getFeatureOuterRings(state.featuresById[id]);
+    return {
+      id,
+      iso: state.provinceIsoById[id],
+      box: getCoordinateBounds(rings)
+    };
+  });
+
+  for (let i = 0; i < enriched.length; i += 1) {
+    for (let j = i + 1; j < enriched.length; j += 1) {
+      const a = enriched[i];
+      const b = enriched[j];
+      if (!boundsTouchOrNear(a.box, b.box, 0.35)) continue;
+      adjacency[a.id].push(b.id);
+      adjacency[b.id].push(a.id);
+    }
+  }
+
+  return adjacency;
+}
+
+function getCoordinateBounds(rings) {
+  const points = rings.flat();
+  if (!points.length) {
+    return {
+      minLon: 0,
+      maxLon: 0,
+      minLat: 0,
+      maxLat: 0
+    };
+  }
+
+  const lons = points.map((pt) => pt[0]);
+  const lats = points.map((pt) => pt[1]);
+  return {
+    minLon: Math.min(...lons),
+    maxLon: Math.max(...lons),
+    minLat: Math.min(...lats),
+    maxLat: Math.max(...lats)
+  };
+}
+
+function boundsTouchOrNear(a, b, epsilon = 0.2) {
+  return !(a.maxLon + epsilon < b.minLon
+    || b.maxLon + epsilon < a.minLon
+    || a.maxLat + epsilon < b.minLat
+    || b.maxLat + epsilon < a.minLat);
 }
 
 function formatPathNames(path) {
