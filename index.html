@@ -67,6 +67,24 @@
     </section>
   </main>
 
-  <script type="module" src="game.js"></script>
+  <script type="module">
+    const CACHE_RESET_KEY = 'trh-cache-reset-v1';
+
+    async function clearBrowserCacheOnce() {
+      if (sessionStorage.getItem(CACHE_RESET_KEY)) return;
+
+      sessionStorage.setItem(CACHE_RESET_KEY, 'true');
+
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((key) => caches.delete(key)));
+      }
+
+      location.reload();
+    }
+
+    await clearBrowserCacheOnce();
+    await import('./game.js');
+  </script>
 </body>
 </html>
