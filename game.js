@@ -84,6 +84,7 @@ const state = {
   units: {},
   currentMission: null,
   pendingMoveFrom: null,
+  dragMoveActive: false,
   projectedById: {},
   countryFeaturesByIso: {},
   groupedDivisions: true,
@@ -145,6 +146,9 @@ async function init() {
     endTurnBtn.addEventListener('click', endTurn);
     toggleGroupBtn.addEventListener('click', toggleDivisionGrouping);
     nextMissionBtn.addEventListener('click', nextMission);
+    document.addEventListener('mouseup', () => {
+      state.dragMoveActive = false;
+    });
   } catch (error) {
     storyText.textContent = `Failed to load live province borders: ${error.message}`;
     storyNextBtn.disabled = true;
@@ -400,7 +404,7 @@ function loadMission(index) {
     } else if ((mission.enemyControlled || []).includes(id)) {
       state.units[id] = createProvinceUnits('enemy', id);
     } else if ((mission.neutral || []).includes(id)) {
-      state.units[id] = [];
+      state.units[id] = createProvinceUnits('nato', id);
     }
   });
 
@@ -542,11 +546,34 @@ function renderMap() {
       provincePath.classList.add('selected');
     }
 
-    provincePath.addEventListener('click', async () => {
-      if (state.pendingMoveFrom && state.pendingMoveFrom !== feature.id) {
+    provincePath.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) return;
+      if (state.phase !== 'NATO') return;
+      if (state.control[feature.id] !== 'nato') return;
+      if ((state.units[feature.id] || []).length === 0) return;
+
+      state.pendingMoveFrom = feature.id;
+      state.selected = feature.id;
+      state.dragMoveActive = true;
+      renderProvinceInfo(feature.id);
+      buildTargetOptions(feature.id);
+      renderMap();
+    });
+
+    provincePath.addEventListener('mouseup', async () => {
+      if (!state.dragMoveActive || !state.pendingMoveFrom) return;
+      state.dragMoveActive = false;
+
+      if (state.pendingMoveFrom !== feature.id) {
         await executeMoveCommand(state.pendingMoveFrom, feature.id);
         return;
       }
+
+      renderMap();
+    });
+
+    provincePath.addEventListener('click', () => {
+      if (state.dragMoveActive) return;
 
       state.selected = feature.id;
       renderMap();
@@ -598,18 +625,6 @@ function renderUnitSymbol(provinceId, cx, cy) {
     group.classList.add('nato-symbol', side);
     if (state.pendingMoveFrom === provinceId) {
       group.classList.add('active-move-source');
-    }
-
-    if (state.phase === 'NATO' && side === 'nato') {
-      group.classList.add('clickable');
-      group.addEventListener('click', (event) => {
-        event.stopPropagation();
-        state.pendingMoveFrom = provinceId;
-        state.selected = provinceId;
-        renderProvinceInfo(provinceId);
-        buildTargetOptions(provinceId);
-        renderMap();
-      });
     }
 
     const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -673,6 +688,7 @@ function renderProvinceInfo(provinceId) {
   const feature = state.featuresById[provinceId];
   const units = state.units[provinceId] || [];
   const side = state.control[provinceId] || 'neutral';
+  const sideLabel = side === 'nato' ? 'ALLY' : 'ENEMY';
 
   const unitText = units.length
     ? units.map((u, idx) => `${idx + 1}. ${u.symbol || UNIT_SYMBOL_BY_TYPE[u.type] || '•'} ${u.type.toUpperCase()} HP:${Math.max(0, Math.round(u.hp))} ORG:${Math.max(0, Math.round(u.org))}`).join('<br>')
@@ -682,7 +698,7 @@ function renderProvinceInfo(provinceId) {
     <strong>${feature.properties.name}</strong><br>
     Nation: ${feature.properties.nation}<br>
     Terrain: ${feature.properties.terrain}<br>
-    Control: ${side.toUpperCase()}<br><br>
+    Control: ${sideLabel}<br><br>
     ${unitText}
   `;
 }
@@ -740,10 +756,7 @@ async function executeMoveCommand(from, to) {
   }
 
   const destinationDefended = isEnemyProvinceDefended(to);
-  const path = findPath(from, to, (neighbor, current, goal) => {
-    if (neighbor === goal) return true;
-    return !isEnemyProvinceDefended(neighbor);
-  });
+  const path = findPath(from, to, () => true);
 
   if (!path || path.length < 2) {
     log(`No valid movement corridor from ${state.featuresById[from].properties.name} to ${state.featuresById[to].properties.name}.`);
@@ -801,7 +814,7 @@ function transferUnitsSingleStep(fromId, toId, side) {
   state.units[fromId] = [];
   if (!state.units[toId]) state.units[toId] = [];
 
-  const toSide = state.control[toId] || 'neutral';
+  const toSide = state.control[toId] || 'enemy';
   if (toSide !== side) {
     const defenders = state.units[toId] || [];
     if (defenders.length > 0) {
@@ -829,9 +842,7 @@ function transferUnits(fromId, toId, side, path) {
   }
 
   state.units[fromId] = [];
-  if (state.control[toId] === 'neutral') {
-    state.control[toId] = side;
-  }
+  state.control[toId] = side;
   if (!state.units[toId]) state.units[toId] = [];
   state.units[toId] = state.units[toId].concat(moving.map((u) => ({ ...u, org: Math.max(10, u.org - Math.max(0, path.length - 1) * 2) })));
 }
@@ -958,7 +969,7 @@ function applyEncirclementEffects() {
     state.units[pid] = (state.units[pid] || []).filter((u) => u.hp > 0 && u.org > 0);
     log(`Encirclement: ${state.featuresById[pid].properties.name} is cut off (-20 ORG).`);
     if (!state.units[pid].length) {
-      state.control[pid] = 'neutral';
+      state.control[pid] = 'nato';
       log(`${state.featuresById[pid].properties.name} collapsed from isolation.`);
     }
   });
