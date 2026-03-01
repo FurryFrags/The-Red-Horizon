@@ -14,6 +14,41 @@ const endTurnBtn = document.getElementById('end-turn-btn');
 const logEl = document.getElementById('combat-log');
 const nextMissionBtn = document.getElementById('next-mission-btn');
 
+const COUNTRY_BOUNDARY_CATALOG = {
+  POL: 'Poland',
+  IRN: 'Iran',
+  TUR: 'Turkey',
+  AFG: 'Afghanistan',
+  CHN: 'China',
+  IRQ: 'Iraq',
+  PRK: 'North Korea',
+  USA: 'United States'
+};
+
+const PROVINCE_CATALOG = {
+  pl_warsaw: { iso: 'POL', names: ['Mazowieckie', 'Masovian'], terrain: 'plains' },
+  pl_lublin: { iso: 'POL', names: ['Lubelskie', 'Lublin'], terrain: 'plains' },
+  tr_van: { iso: 'TUR', names: ['Van'], terrain: 'mountain' },
+  tr_ankara: { iso: 'TUR', names: ['Ankara'], terrain: 'plains' },
+  ir_urmia: { iso: 'IRN', names: ['West Azerbaijan', 'Āz̄arbāyjān-e Gharbī'], terrain: 'mountain' },
+  ir_tabriz: { iso: 'IRN', names: ['East Azerbaijan', 'Āz̄arbāyjān-e Sharqī'], terrain: 'mountain' },
+  ir_kermanshah: { iso: 'IRN', names: ['Kermanshah', 'Kermānshāh'], terrain: 'hills' },
+  ir_tehran: { iso: 'IRN', names: ['Tehran', 'Tehrān'], terrain: 'plains' },
+  ir_isfahan: { iso: 'IRN', names: ['Isfahan', 'Esfahan', 'Eşfahān'], terrain: 'plains' },
+  ir_mashhad: { iso: 'IRN', names: ['Razavi Khorasan', 'Khorasan-e Razavi'], terrain: 'desert' },
+  ir_chabahar: { iso: 'IRN', names: ['Sistan and Baluchestan', 'Sīstān va Balūchestān'], terrain: 'coastal' },
+  af_herat: { iso: 'AFG', names: ['Herat', 'Herāt'], terrain: 'mountain' },
+  af_kabul: { iso: 'AFG', names: ['Kabul', 'Kābul'], terrain: 'mountain' },
+  cn_dandong: { iso: 'CHN', names: ['Liaoning'], terrain: 'coastal' },
+  iq_basra: { iso: 'IRQ', names: ['Basra', 'Al Basrah'], terrain: 'coastal' },
+  iq_baghdad: { iso: 'IRQ', names: ['Baghdad', 'Baghdād'], terrain: 'plains' },
+  kp_hamhung: { iso: 'PRK', names: ['South Hamgyong', 'Hamgyŏng-namdo', 'Hamgyongnam-do'], terrain: 'mountain' },
+  kp_pyongyang: { iso: 'PRK', names: ['Pyongyang', 'P’yŏngyang'], terrain: 'plains' },
+  us_washington: { iso: 'USA', names: ['District of Columbia', 'Washington, D.C.'], terrain: 'plains' },
+  us_atlanta: { iso: 'USA', names: ['Georgia'], terrain: 'plains' },
+  us_norfolk: { iso: 'USA', names: ['Virginia'], terrain: 'coastal' }
+};
+
 const UNIT_TEMPLATES = {
   ground: { hp: 100, org: 100, atk: 32, def: 20, symbol: 'G' },
   air: { hp: 70, org: 80, atk: 18, def: 10, symbol: 'A' },
@@ -39,26 +74,211 @@ const state = {
 init();
 
 async function init() {
-  const [geoRes, missionRes] = await Promise.all([
-    fetch('data/act1_map.geojson'),
-    fetch('data/missions.json')
-  ]);
+  try {
+    const missionRes = await fetch('data/missions.json');
+    const missionData = await missionRes.json();
 
-  const geo = await geoRes.json();
-  const missionData = await missionRes.json();
+    state.featuresById = await loadProvinceFeatures(missionData.missions);
 
-  geo.features.forEach((feature) => {
-    state.featuresById[feature.properties.id] = feature;
+    state.story = missionData.story;
+    state.missions = missionData.missions;
+
+    storyText.textContent = state.story[state.storyIndex];
+    storyNextBtn.addEventListener('click', onNextStory);
+    attackBtn.addEventListener('click', handleAttack);
+    endTurnBtn.addEventListener('click', endTurn);
+    nextMissionBtn.addEventListener('click', nextMission);
+  } catch (error) {
+    storyText.textContent = `Failed to load live province borders: ${error.message}`;
+    storyNextBtn.disabled = true;
+  }
+}
+
+async function loadProvinceFeatures(missions) {
+  const requiredProvinceIds = new Set();
+  missions.forEach((mission) => {
+    ['playerControlled', 'enemyControlled', 'neutral', 'objectives'].forEach((key) => {
+      (mission[key] || []).forEach((id) => requiredProvinceIds.add(id));
+    });
+    Object.entries(mission.adjacency || {}).forEach(([from, targets]) => {
+      requiredProvinceIds.add(from);
+      targets.forEach((target) => requiredProvinceIds.add(target));
+    });
   });
 
-  state.story = missionData.story;
-  state.missions = missionData.missions;
+  const requiredCountries = new Set(
+    Array.from(requiredProvinceIds)
+      .map((id) => PROVINCE_CATALOG[id]?.iso)
+      .filter(Boolean)
+  );
 
-  storyText.textContent = state.story[state.storyIndex];
-  storyNextBtn.addEventListener('click', onNextStory);
-  attackBtn.addEventListener('click', handleAttack);
-  endTurnBtn.addEventListener('click', endTurn);
-  nextMissionBtn.addEventListener('click', nextMission);
+  const boundaryByCountry = {};
+  await Promise.all(Array.from(requiredCountries).map(async (iso) => {
+    boundaryByCountry[iso] = await fetchCountryProvinces(iso);
+  }));
+
+  const featuresById = {};
+  requiredProvinceIds.forEach((provinceId) => {
+    const config = PROVINCE_CATALOG[provinceId];
+    if (!config) {
+      throw new Error(`Missing province mapping for ${provinceId}. Add it to PROVINCE_CATALOG.`);
+    }
+
+    const sourceFeature = matchProvinceFeature(boundaryByCountry[config.iso], config.names);
+    if (!sourceFeature) {
+      throw new Error(`Could not match online province for ${provinceId} in ${COUNTRY_BOUNDARY_CATALOG[config.iso]}.`);
+    }
+
+    featuresById[provinceId] = {
+      type: 'Feature',
+      geometry: sourceFeature.geometry,
+      properties: {
+        id: provinceId,
+        name: config.names[0],
+        nation: COUNTRY_BOUNDARY_CATALOG[config.iso],
+        terrain: config.terrain,
+        sourceName: readFeatureName(sourceFeature)
+      }
+    };
+  });
+
+  return featuresById;
+}
+
+async function fetchCountryProvinces(iso) {
+  const metadataUrl = `https://www.geoboundaries.org/api/current/gbOpen/${iso}/ADM1/`;
+  const fallbackGeometryUrls = [
+    `https://cdn.jsdelivr.net/gh/wmgeolab/geoBoundaries@main/releaseData/gbOpen/${iso}/ADM1/geoBoundaries-${iso}-ADM1_simplified.geojson`,
+    `https://raw.githubusercontent.com/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${iso}/ADM1/geoBoundaries-${iso}-ADM1_simplified.geojson`,
+    `https://raw.githubusercontent.com/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${iso}/ADM1/geoBoundaries-${iso}-ADM1.geojson`,
+    `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${iso}/ADM1/geoBoundaries-${iso}-ADM1_simplified.geojson`,
+    `https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/${iso}/ADM1/geoBoundaries-${iso}-ADM1.geojson`
+  ];
+
+  const errors = [];
+  let metadata = null;
+
+  try {
+    metadata = await fetchJsonWithTimeout(metadataUrl);
+  } catch (error) {
+    errors.push(`metadata: ${error.message}`);
+  }
+
+  const urlCandidates = [];
+  if (metadata) {
+    [
+      metadata.simplifiedGeometryGeoJSON,
+      metadata.gjDownloadURL,
+      metadata.geoJSONURL,
+      metadata.staticDownloadLink,
+      metadata.geometryURL
+    ].forEach((url) => {
+      if (!url) return;
+      normalizeGeoJsonUrl(url).forEach((normalized) => urlCandidates.push(normalized));
+    });
+  }
+  fallbackGeometryUrls.forEach((url) => normalizeGeoJsonUrl(url).forEach((normalized) => urlCandidates.push(normalized)));
+
+  const uniqueUrls = Array.from(new Set(urlCandidates)).filter((url) => !url.toLowerCase().endsWith('.zip'));
+  for (const url of uniqueUrls) {
+    try {
+      const geoJson = await fetchJsonWithTimeout(url);
+      if (Array.isArray(geoJson?.features) && geoJson.features.length) {
+        return geoJson;
+      }
+      errors.push(`geometry: ${url} returned no features`);
+    } catch (error) {
+      errors.push(`geometry: ${url} -> ${error.message}`);
+    }
+  }
+
+  const shortErrors = errors.slice(0, 5).join(' | ');
+  throw new Error(`Failed loading online ADM1 GeoJSON for ${iso}. ${shortErrors}`);
+}
+
+function matchProvinceFeature(geoJson, candidateNames) {
+  const wanted = candidateNames.map(normalizeName);
+  return (geoJson.features || []).find((feature) => {
+    const name = normalizeName(readFeatureName(feature));
+    return wanted.some((candidate) => name === candidate || name.includes(candidate) || candidate.includes(name));
+  });
+}
+
+function readFeatureName(feature) {
+  const props = feature?.properties || {};
+  return props.shapeName || props.name || props.NAME_1 || props.ADM1_EN || props.admin1Name || '';
+}
+
+function normalizeName(value) {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+
+
+function normalizeGeoJsonUrl(url) {
+  const urls = [url];
+
+  const githubMatch = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/(?:raw|blob)\/([^/]+)\/(.+)$/i);
+  if (githubMatch) {
+    const [, owner, repo, ref, path] = githubMatch;
+    urls.push(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`);
+    urls.push(`https://media.githubusercontent.com/media/${owner}/${repo}/${ref}/${path}`);
+  }
+
+  const rawMatch = url.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i);
+  if (rawMatch) {
+    const [, owner, repo, ref, path] = rawMatch;
+    urls.push(`https://media.githubusercontent.com/media/${owner}/${repo}/${ref}/${path}`);
+    if (!url.includes('?raw=1')) {
+      urls.push(`${url}?raw=1`);
+    }
+  }
+
+  return urls;
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const body = await response.text();
+    const trimmed = body.trim();
+    if (!trimmed) {
+      throw new Error('empty response body');
+    }
+
+    if (trimmed.startsWith('version https://git-lfs.github.com/spec/v1')) {
+      throw new Error('Git LFS pointer response (not GeoJSON payload)');
+    }
+
+    if (trimmed[0] === '<') {
+      throw new Error('received HTML instead of JSON');
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch (parseError) {
+      throw new Error(`invalid JSON payload: ${parseError.message}`);
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function onNextStory() {
