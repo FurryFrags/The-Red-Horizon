@@ -11,6 +11,7 @@ const provinceInfo = document.getElementById('province-info');
 const targetSelect = document.getElementById('target-select');
 const attackBtn = document.getElementById('attack-btn');
 const endTurnBtn = document.getElementById('end-turn-btn');
+const toggleGroupBtn = document.getElementById('toggle-group-btn');
 const logEl = document.getElementById('combat-log');
 const nextMissionBtn = document.getElementById('next-mission-btn');
 
@@ -50,9 +51,15 @@ const PROVINCE_CATALOG = {
 };
 
 const UNIT_TEMPLATES = {
-  ground: { hp: 100, org: 100, atk: 32, def: 20, symbol: 'G' },
-  air: { hp: 70, org: 80, atk: 18, def: 10, symbol: 'A' },
-  naval: { hp: 90, org: 90, atk: 22, def: 14, symbol: 'N' }
+  ground: { hp: 100, org: 100, atk: 32, def: 20, symbol: '⊞' },
+  air: { hp: 70, org: 80, atk: 18, def: 10, symbol: '✈' },
+  naval: { hp: 90, org: 90, atk: 22, def: 14, symbol: '⚓' }
+};
+
+const UNIT_SYMBOL_BY_TYPE = {
+  ground: '⊞',
+  air: '✈',
+  naval: '⚓'
 };
 
 const state = {
@@ -69,7 +76,9 @@ const state = {
   currentMission: null,
   drag: null,
   projectedById: {},
-  countryFeaturesByIso: {}
+  countryFeaturesByIso: {},
+  groupedDivisions: true,
+  combatTimer: null
 };
 
 init();
@@ -90,6 +99,7 @@ async function init() {
     storyNextBtn.addEventListener('click', onNextStory);
     attackBtn.addEventListener('click', handleAttack);
     endTurnBtn.addEventListener('click', endTurn);
+    toggleGroupBtn.addEventListener('click', toggleDivisionGrouping);
     nextMissionBtn.addEventListener('click', nextMission);
   } catch (error) {
     storyText.textContent = `Failed to load live province borders: ${error.message}`;
@@ -305,6 +315,16 @@ function onNextStory() {
   storyText.textContent = state.story[state.storyIndex];
 }
 
+
+function toggleDivisionGrouping() {
+  state.groupedDivisions = !state.groupedDivisions;
+  toggleGroupBtn.textContent = state.groupedDivisions ? 'Ungroup Divisions View' : 'Group Divisions View';
+  renderMap();
+  if (state.selected) {
+    renderProvinceInfo(state.selected);
+  }
+}
+
 function loadMission(index) {
   const mission = state.missions[index];
   state.missionIndex = index;
@@ -315,6 +335,7 @@ function loadMission(index) {
   state.control = {};
   state.units = {};
   nextMissionBtn.classList.add('hidden');
+  toggleGroupBtn.textContent = state.groupedDivisions ? 'Ungroup Divisions View' : 'Group Divisions View';
 
   mission.playerControlled.forEach((id) => {
     state.control[id] = 'nato';
@@ -344,9 +365,16 @@ function loadMission(index) {
 
 function createProvinceUnits(side, provinceId) {
   const terrain = state.featuresById[provinceId]?.properties?.terrain || 'plains';
-  const ground = { ...UNIT_TEMPLATES.ground, type: 'ground' };
-  const air = { ...UNIT_TEMPLATES.air, type: 'air' };
-  const naval = { ...UNIT_TEMPLATES.naval, type: 'naval' };
+  const makeUnit = (template, type) => ({
+    ...template,
+    id: `${provinceId}_${type}_${Math.random().toString(36).slice(2, 9)}`,
+    type,
+    symbol: UNIT_SYMBOL_BY_TYPE[type]
+  });
+
+  const ground = makeUnit(UNIT_TEMPLATES.ground, 'ground');
+  const air = makeUnit(UNIT_TEMPLATES.air, 'air');
+  const naval = makeUnit(UNIT_TEMPLATES.naval, 'naval');
 
   if (terrain === 'coastal') return [ground, naval, air];
   if (terrain === 'mountain') {
@@ -383,6 +411,11 @@ function renderMap() {
       .filter(Boolean)
   );
 
+  relevant.forEach((feature) => {
+    const iso = PROVINCE_CATALOG[feature.properties.id]?.iso;
+    if (iso) focusNationIsos.add(iso);
+  });
+
   const backdropFeatures = Array.from(focusNationIsos).flatMap((iso) => {
     const countryGeoJson = state.countryFeaturesByIso[iso];
     return (countryGeoJson?.features || []).map((feature, index) => ({
@@ -416,6 +449,11 @@ function renderMap() {
         .map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`)
         .join(' ') + ' Z')
       .join(' ');
+
+    const backdropPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    backdropPath.setAttribute('d', pathData);
+    backdropPath.classList.add('nation-backdrop');
+    mapSvg.appendChild(backdropPath);
 
     const borderPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     borderPath.setAttribute('d', pathData);
@@ -499,27 +537,63 @@ function renderUnitSymbol(provinceId, cx, cy) {
   const units = state.units[provinceId] || [];
   if (!units.length || side === 'neutral') return;
 
-  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  group.classList.add('nato-symbol');
+  const provinceIso = PROVINCE_CATALOG[provinceId]?.iso?.toLowerCase();
+  const flagUrl = provinceIso ? `https://flagcdn.com/w20/${provinceIso}.png` : null;
 
-  const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  box.setAttribute('x', (cx - 20).toString());
-  box.setAttribute('y', (cy - 12).toString());
-  box.setAttribute('width', '40');
-  box.setAttribute('height', '24');
-  box.classList.add('unit-box', side);
-  group.appendChild(box);
+  const renderCounter = (x, y, label, unitCount) => {
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.classList.add('nato-symbol');
 
-  const summary = units.map((u) => u.symbol).join('');
-  const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-  txt.setAttribute('x', cx.toString());
-  txt.setAttribute('y', (cy + 4).toString());
-  txt.setAttribute('text-anchor', 'middle');
-  txt.classList.add('unit-label');
-  txt.textContent = summary;
-  group.appendChild(txt);
+    const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    box.setAttribute('x', (x - 24).toString());
+    box.setAttribute('y', (y - 12).toString());
+    box.setAttribute('width', '48');
+    box.setAttribute('height', '24');
+    box.classList.add('unit-box', side);
+    group.appendChild(box);
 
-  mapSvg.appendChild(group);
+    if (flagUrl) {
+      const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+      image.setAttribute('href', flagUrl);
+      image.setAttribute('x', (x - 22).toString());
+      image.setAttribute('y', (y - 10).toString());
+      image.setAttribute('width', '10');
+      image.setAttribute('height', '8');
+      image.classList.add('unit-flag');
+      group.appendChild(image);
+    }
+
+    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', (x + 1).toString());
+    txt.setAttribute('y', (y + 4).toString());
+    txt.setAttribute('text-anchor', 'middle');
+    txt.classList.add('unit-label');
+    txt.textContent = label;
+    group.appendChild(txt);
+
+    if (unitCount > 1) {
+      const count = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      count.setAttribute('x', (x + 17).toString());
+      count.setAttribute('y', (y + 10).toString());
+      count.classList.add('unit-count');
+      count.textContent = String(unitCount);
+      group.appendChild(count);
+    }
+
+    mapSvg.appendChild(group);
+  };
+
+  if (state.groupedDivisions) {
+    renderCounter(cx, cy, units.map((u) => u.symbol || UNIT_SYMBOL_BY_TYPE[u.type]).join(''), units.length);
+    return;
+  }
+
+  const spacing = 28;
+  const startY = cy - ((units.length - 1) * spacing) / 2;
+  units.forEach((unit, index) => {
+    const y = startY + index * spacing;
+    renderCounter(cx, y, unit.symbol || UNIT_SYMBOL_BY_TYPE[unit.type] || '•', 1);
+  });
 }
 
 function buildTargetOptions(provinceId) {
@@ -548,7 +622,7 @@ function renderProvinceInfo(provinceId) {
   const side = state.control[provinceId] || 'neutral';
 
   const unitText = units.length
-    ? units.map((u) => `${u.type.toUpperCase()} HP:${Math.max(0, Math.round(u.hp))} ORG:${Math.max(0, Math.round(u.org))}`).join('<br>')
+    ? units.map((u, idx) => `${idx + 1}. ${u.symbol || UNIT_SYMBOL_BY_TYPE[u.type] || '•'} ${u.type.toUpperCase()} HP:${Math.max(0, Math.round(u.hp))} ORG:${Math.max(0, Math.round(u.org))}`).join('<br>')
     : 'No stationed units';
 
   provinceInfo.innerHTML = `
@@ -560,7 +634,7 @@ function renderProvinceInfo(provinceId) {
   `;
 }
 
-function handleAttack() {
+async function handleAttack() {
   if (state.phase !== 'NATO') {
     log('Wait for NATO phase to issue attacks.');
     return;
@@ -588,7 +662,7 @@ function handleAttack() {
     transferUnits(from, stagingProvince, 'nato', attackRoute.slice(0, -1));
   }
 
-  resolveBattle(stagingProvince, to, 'nato');
+  await resolveBattleOverTime(stagingProvince, to, 'nato');
   renderMap();
   renderProvinceInfo(stagingProvince);
   checkVictory();
@@ -614,7 +688,7 @@ function updateDragTarget(provinceId) {
   renderMap();
 }
 
-function endDrag(targetProvince) {
+async function endDrag(targetProvince) {
   if (!state.drag) return;
   const fromProvince = state.drag.from;
   state.drag = null;
@@ -624,10 +698,10 @@ function endDrag(targetProvince) {
     return;
   }
 
-  executeDragCommand(fromProvince, targetProvince);
+  await executeDragCommand(fromProvince, targetProvince);
 }
 
-function executeDragCommand(from, to) {
+async function executeDragCommand(from, to) {
   const toSide = state.control[to] || 'neutral';
   const movePath = findPath(from, to, (neighbor) => state.control[neighbor] !== 'enemy');
 
@@ -647,7 +721,7 @@ function executeDragCommand(from, to) {
       transferUnits(from, stagingProvince, 'nato', attackPath.slice(0, -1));
       log(`Redeployed via ${formatPathNames(attackPath.slice(0, -1))}.`);
     }
-    resolveBattle(stagingProvince, to, 'nato');
+    await resolveBattleOverTime(stagingProvince, to, 'nato');
     state.selected = stagingProvince;
   } else {
     if (!movePath || movePath.length < 2) {
@@ -681,8 +755,33 @@ function transferUnits(fromId, toId, side, path) {
   state.units[toId] = state.units[toId].concat(moving.map((u) => ({ ...u, org: Math.max(10, u.org - Math.max(0, path.length - 1) * 2) })));
 }
 
-function resolveBattle(fromId, toId, attackerSide) {
-  const defenderSide = attackerSide === 'nato' ? 'enemy' : 'nato';
+function resolveBattleOverTime(fromId, toId, attackerSide) {
+  if (state.combatTimer) {
+    clearInterval(state.combatTimer);
+    state.combatTimer = null;
+  }
+
+  return new Promise((resolve) => {
+    let ticks = 0;
+    const maxTicks = 4;
+
+    state.combatTimer = setInterval(() => {
+      ticks += 1;
+      resolveBattle(fromId, toId, attackerSide, 0.35);
+      renderMap();
+      if (state.selected) renderProvinceInfo(state.selected);
+
+      const battleDone = (state.units[toId] || []).length === 0 || (state.units[fromId] || []).length === 0;
+      if (ticks >= maxTicks || battleDone) {
+        clearInterval(state.combatTimer);
+        state.combatTimer = null;
+        resolve();
+      }
+    }, 260);
+  });
+}
+
+function resolveBattle(fromId, toId, attackerSide, intensity = 1) {
   const attackerUnits = state.units[fromId] || [];
   const defenderUnits = state.units[toId] || [];
 
@@ -703,8 +802,8 @@ function resolveBattle(fromId, toId, attackerSide) {
   const defensePower = defenderUnits.reduce((sum, unit) => sum + unit.def * (unit.org / 100), 0);
 
   const ratio = attackPower / Math.max(1, defensePower);
-  const inflicted = 20 * ratio;
-  const retaliate = 14 / Math.max(1, ratio);
+  const inflicted = 20 * ratio * intensity;
+  const retaliate = (14 / Math.max(1, ratio)) * intensity;
 
   defenderUnits.forEach((unit) => {
     unit.hp -= inflicted;
@@ -722,6 +821,7 @@ function resolveBattle(fromId, toId, attackerSide) {
   if (!state.units[toId].length) {
     state.control[toId] = attackerSide;
     state.units[toId] = state.units[fromId].map((u) => ({ ...u, org: Math.max(20, u.org - 12) }));
+    state.units[fromId] = [];
     log(`Breakthrough! ${state.featuresById[toId].properties.name} captured by ${attackerSide.toUpperCase()}.`);
 
     if (terrain === 'plains' || terrain === 'desert') {
