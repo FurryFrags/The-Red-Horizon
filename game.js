@@ -62,6 +62,21 @@ const UNIT_SYMBOL_BY_TYPE = {
   naval: '⚓'
 };
 
+const UNIT_SYMBOL_BY_TYPE = {
+  ground: '⊞',
+  air: '✈',
+  naval: '⚓'
+};
+
+const LEGACY_SYMBOL_MAP = { G: '⊞', A: '✈', N: '⚓' };
+
+function getUnitDisplaySymbol(unit) {
+  if (!unit) return '•';
+  if (UNIT_SYMBOL_BY_TYPE[unit.type]) return UNIT_SYMBOL_BY_TYPE[unit.type];
+  if (LEGACY_SYMBOL_MAP[unit.symbol]) return LEGACY_SYMBOL_MAP[unit.symbol];
+  return unit.symbol || '•';
+}
+
 const state = {
   storyIndex: 0,
   story: [],
@@ -337,19 +352,26 @@ function loadMission(index) {
   nextMissionBtn.classList.add('hidden');
   toggleGroupBtn.textContent = state.groupedDivisions ? 'Ungroup Divisions View' : 'Group Divisions View';
 
-  mission.playerControlled.forEach((id) => {
-    state.control[id] = 'nato';
-    state.units[id] = createProvinceUnits('nato', id);
-  });
+  const missionProvinceIds = new Set(Object.keys(mission.adjacency || {}));
+  Object.values(mission.adjacency || {}).forEach((targets) => targets.forEach((targetId) => missionProvinceIds.add(targetId)));
 
-  mission.enemyControlled.forEach((id) => {
-    state.control[id] = 'enemy';
-    state.units[id] = createProvinceUnits('enemy', id);
-  });
+  missionProvinceIds.forEach((id) => {
+    const allegiance = mission.allegiances?.[id]
+      || (mission.playerControlled || []).includes(id) && 'nato'
+      || (mission.enemyControlled || []).includes(id) && 'enemy'
+      || (mission.neutral || []).includes(id) && 'nato'
+      || 'enemy';
 
-  mission.neutral.forEach((id) => {
-    state.control[id] = 'neutral';
-    state.units[id] = [];
+    state.control[id] = allegiance;
+    state.units[id] = allegiance === 'enemy' || allegiance === 'nato' ? createProvinceUnits(allegiance, id) : [];
+
+    if ((mission.playerControlled || []).includes(id)) {
+      state.units[id] = createProvinceUnits('nato', id);
+    } else if ((mission.enemyControlled || []).includes(id)) {
+      state.units[id] = createProvinceUnits('enemy', id);
+    } else if ((mission.neutral || []).includes(id)) {
+      state.units[id] = [];
+    }
   });
 
   missionTitle.textContent = mission.name;
