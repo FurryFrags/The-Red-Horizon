@@ -14,41 +14,6 @@ const endTurnBtn = document.getElementById('end-turn-btn');
 const logEl = document.getElementById('combat-log');
 const nextMissionBtn = document.getElementById('next-mission-btn');
 
-const COUNTRY_BOUNDARY_CATALOG = {
-  POL: 'Poland',
-  IRN: 'Iran',
-  TUR: 'Turkey',
-  AFG: 'Afghanistan',
-  CHN: 'China',
-  IRQ: 'Iraq',
-  PRK: 'North Korea',
-  USA: 'United States'
-};
-
-const PROVINCE_CATALOG = {
-  pl_warsaw: { iso: 'POL', names: ['Mazowieckie', 'Masovian'], terrain: 'plains' },
-  pl_lublin: { iso: 'POL', names: ['Lubelskie', 'Lublin'], terrain: 'plains' },
-  tr_van: { iso: 'TUR', names: ['Van'], terrain: 'mountain' },
-  tr_ankara: { iso: 'TUR', names: ['Ankara'], terrain: 'plains' },
-  ir_urmia: { iso: 'IRN', names: ['West Azerbaijan', 'Āz̄arbāyjān-e Gharbī'], terrain: 'mountain' },
-  ir_tabriz: { iso: 'IRN', names: ['East Azerbaijan', 'Āz̄arbāyjān-e Sharqī'], terrain: 'mountain' },
-  ir_kermanshah: { iso: 'IRN', names: ['Kermanshah', 'Kermānshāh'], terrain: 'hills' },
-  ir_tehran: { iso: 'IRN', names: ['Tehran', 'Tehrān'], terrain: 'plains' },
-  ir_isfahan: { iso: 'IRN', names: ['Isfahan', 'Esfahan', 'Eşfahān'], terrain: 'plains' },
-  ir_mashhad: { iso: 'IRN', names: ['Razavi Khorasan', 'Khorasan-e Razavi'], terrain: 'desert' },
-  ir_chabahar: { iso: 'IRN', names: ['Sistan and Baluchestan', 'Sīstān va Balūchestān'], terrain: 'coastal' },
-  af_herat: { iso: 'AFG', names: ['Herat', 'Herāt'], terrain: 'mountain' },
-  af_kabul: { iso: 'AFG', names: ['Kabul', 'Kābul'], terrain: 'mountain' },
-  cn_dandong: { iso: 'CHN', names: ['Liaoning'], terrain: 'coastal' },
-  iq_basra: { iso: 'IRQ', names: ['Basra', 'Al Basrah'], terrain: 'coastal' },
-  iq_baghdad: { iso: 'IRQ', names: ['Baghdad', 'Baghdād'], terrain: 'plains' },
-  kp_hamhung: { iso: 'PRK', names: ['South Hamgyong', 'Hamgyŏng-namdo', 'Hamgyongnam-do'], terrain: 'mountain' },
-  kp_pyongyang: { iso: 'PRK', names: ['Pyongyang', 'P’yŏngyang'], terrain: 'plains' },
-  us_washington: { iso: 'USA', names: ['District of Columbia', 'Washington, D.C.'], terrain: 'plains' },
-  us_atlanta: { iso: 'USA', names: ['Georgia'], terrain: 'plains' },
-  us_norfolk: { iso: 'USA', names: ['Virginia'], terrain: 'coastal' }
-};
-
 const UNIT_TEMPLATES = {
   ground: { hp: 100, org: 100, atk: 32, def: 20, symbol: 'G' },
   air: { hp: 70, org: 80, atk: 18, def: 10, symbol: 'A' },
@@ -74,121 +39,26 @@ const state = {
 init();
 
 async function init() {
-  try {
-    const missionRes = await fetch('data/missions.json');
-    const missionData = await missionRes.json();
+  const [geoRes, missionRes] = await Promise.all([
+    fetch('data/act1_map.geojson'),
+    fetch('data/missions.json')
+  ]);
 
-    state.featuresById = await loadProvinceFeatures(missionData.missions);
+  const geo = await geoRes.json();
+  const missionData = await missionRes.json();
 
-    state.story = missionData.story;
-    state.missions = missionData.missions;
-
-    storyText.textContent = state.story[state.storyIndex];
-    storyNextBtn.addEventListener('click', onNextStory);
-    attackBtn.addEventListener('click', handleAttack);
-    endTurnBtn.addEventListener('click', endTurn);
-    nextMissionBtn.addEventListener('click', nextMission);
-  } catch (error) {
-    storyText.textContent = `Failed to load live province borders: ${error.message}`;
-    storyNextBtn.disabled = true;
-  }
-}
-
-async function loadProvinceFeatures(missions) {
-  const requiredProvinceIds = new Set();
-  missions.forEach((mission) => {
-    ['playerControlled', 'enemyControlled', 'neutral', 'objectives'].forEach((key) => {
-      (mission[key] || []).forEach((id) => requiredProvinceIds.add(id));
-    });
-    Object.entries(mission.adjacency || {}).forEach(([from, targets]) => {
-      requiredProvinceIds.add(from);
-      targets.forEach((target) => requiredProvinceIds.add(target));
-    });
+  geo.features.forEach((feature) => {
+    state.featuresById[feature.properties.id] = feature;
   });
 
-  const requiredCountries = new Set(
-    Array.from(requiredProvinceIds)
-      .map((id) => PROVINCE_CATALOG[id]?.iso)
-      .filter(Boolean)
-  );
+  state.story = missionData.story;
+  state.missions = missionData.missions;
 
-  const boundaryByCountry = {};
-  await Promise.all(Array.from(requiredCountries).map(async (iso) => {
-    boundaryByCountry[iso] = await fetchCountryProvinces(iso);
-  }));
-
-  const featuresById = {};
-  requiredProvinceIds.forEach((provinceId) => {
-    const config = PROVINCE_CATALOG[provinceId];
-    if (!config) {
-      throw new Error(`Missing province mapping for ${provinceId}. Add it to PROVINCE_CATALOG.`);
-    }
-
-    const sourceFeature = matchProvinceFeature(boundaryByCountry[config.iso], config.names);
-    if (!sourceFeature) {
-      throw new Error(`Could not match online province for ${provinceId} in ${COUNTRY_BOUNDARY_CATALOG[config.iso]}.`);
-    }
-
-    featuresById[provinceId] = {
-      type: 'Feature',
-      geometry: sourceFeature.geometry,
-      properties: {
-        id: provinceId,
-        name: config.names[0],
-        nation: COUNTRY_BOUNDARY_CATALOG[config.iso],
-        terrain: config.terrain,
-        sourceName: readFeatureName(sourceFeature)
-      }
-    };
-  });
-
-  return featuresById;
-}
-
-async function fetchCountryProvinces(iso) {
-  const url = `https://www.geoboundaries.org/api/current/gbOpen/${iso}/ADM1/`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed loading ADM1 metadata for ${iso} (${response.status}).`);
-  }
-
-  const metadata = await response.json();
-  const geoJsonUrl = metadata.simplifiedGeometryGeoJSON
-    || metadata.gjDownloadURL
-    || metadata.geoJSONURL
-    || metadata.staticDownloadLink;
-  if (!geoJsonUrl) {
-    throw new Error(`ADM1 metadata for ${iso} does not include a geometry URL.`);
-  }
-
-  const geoResponse = await fetch(geoJsonUrl);
-  if (!geoResponse.ok) {
-    throw new Error(`Failed loading ADM1 geometry for ${iso} (${geoResponse.status}).`);
-  }
-
-  return geoResponse.json();
-}
-
-function matchProvinceFeature(geoJson, candidateNames) {
-  const wanted = candidateNames.map(normalizeName);
-  return (geoJson.features || []).find((feature) => {
-    const name = normalizeName(readFeatureName(feature));
-    return wanted.some((candidate) => name === candidate || name.includes(candidate) || candidate.includes(name));
-  });
-}
-
-function readFeatureName(feature) {
-  const props = feature?.properties || {};
-  return props.shapeName || props.name || props.NAME_1 || props.ADM1_EN || props.admin1Name || '';
-}
-
-function normalizeName(value) {
-  return (value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+  storyText.textContent = state.story[state.storyIndex];
+  storyNextBtn.addEventListener('click', onNextStory);
+  attackBtn.addEventListener('click', handleAttack);
+  endTurnBtn.addEventListener('click', endTurn);
+  nextMissionBtn.addEventListener('click', nextMission);
 }
 
 function onNextStory() {
