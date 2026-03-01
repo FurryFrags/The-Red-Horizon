@@ -442,13 +442,12 @@ function loadMission(index) {
   toggleGroupBtn.textContent = state.groupedDivisions ? 'Ungroup Divisions View' : 'Group Divisions View';
 
   const missionProvinceIds = collectMissionProvinceIds(mission);
-  mission.adjacency = buildProvinceAdjacency(Array.from(missionProvinceIds));
+  mission.adjacency = buildMissionAdjacency(mission, Array.from(missionProvinceIds));
 
   missionProvinceIds.forEach((id) => {
     const allegiance = mission.allegiances?.[id]
       || (mission.playerControlled || []).includes(id) && 'nato'
       || (mission.enemyControlled || []).includes(id) && 'enemy'
-      || (mission.neutral || []).includes(id) && 'nato'
       || 'neutral';
 
     state.control[id] = allegiance;
@@ -458,8 +457,6 @@ function loadMission(index) {
       state.units[id] = createProvinceUnits('nato', id);
     } else if ((mission.enemyControlled || []).includes(id)) {
       state.units[id] = createProvinceUnits('enemy', id);
-    } else if ((mission.neutral || []).includes(id)) {
-      state.units[id] = createProvinceUnits('nato', id);
     }
   });
 
@@ -627,6 +624,17 @@ function renderMap() {
 
     provincePath.addEventListener('click', async () => {
       if (state.dragMoveActive) return;
+
+      const provinceUnits = state.units[feature.id] || [];
+      if (state.phase === 'NATO' && state.control[feature.id] === 'nato' && provinceUnits.length > 0) {
+        state.selected = feature.id;
+        state.selectedUnitId = provinceUnits[0].id;
+        renderMap();
+        renderProvinceInfo(feature.id);
+        buildTargetOptions(feature.id);
+        return;
+      }
+
       if (!state.selected) {
         log('Select a NATO unit first, then click a destination province.');
         return;
@@ -832,6 +840,18 @@ async function executeMoveCommand(from, to) {
   if (state.phase !== 'NATO') {
     log('You can only issue movement orders during the NATO phase.');
     state.pendingMoveFrom = null;
+    renderMap();
+    return;
+  }
+
+  if (!state.featuresById[from] || !state.featuresById[to]) {
+    log('Invalid move order: unknown province selected.');
+    renderMap();
+    return;
+  }
+
+  if (state.control[from] !== 'nato') {
+    log('You can only move NATO-controlled units.');
     renderMap();
     return;
   }
@@ -1162,6 +1182,23 @@ function findPath(fromId, toId, passable) {
   }
 
   return null;
+}
+
+function buildMissionAdjacency(mission, provinceIds) {
+  const generatedAdjacency = buildProvinceAdjacency(provinceIds);
+  const scriptedAdjacency = mission.adjacency || {};
+
+  Object.entries(scriptedAdjacency).forEach(([from, neighbors]) => {
+    if (!generatedAdjacency[from]) generatedAdjacency[from] = [];
+
+    (neighbors || []).forEach((to) => {
+      if (!generatedAdjacency[to]) generatedAdjacency[to] = [];
+      if (!generatedAdjacency[from].includes(to)) generatedAdjacency[from].push(to);
+      if (!generatedAdjacency[to].includes(from)) generatedAdjacency[to].push(from);
+    });
+  });
+
+  return generatedAdjacency;
 }
 
 function collectMissionProvinceIds(mission) {
