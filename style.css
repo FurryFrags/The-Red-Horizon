@@ -46,6 +46,21 @@ header h1 { margin-bottom: 0.2rem; }
 .province.enemy { fill: #bf4c4c; }
 .province.neutral { fill: #75818f; }
 
+
+.nation-border {
+  fill: none;
+  stroke: rgba(165, 192, 255, 0.55);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.route-link {
+  stroke: rgba(255, 245, 120, 0.72);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  pointer-events: none;
+}
+
 .path-preview {
   fill: none;
   stroke: #f7ff58;
