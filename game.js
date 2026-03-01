@@ -62,6 +62,12 @@ const UNIT_SYMBOL_BY_TYPE = {
   naval: '⚓'
 };
 
+const UNIT_SYMBOL_BY_TYPE = {
+  ground: '⊞',
+  air: '✈',
+  naval: '⚓'
+};
+
 const LEGACY_SYMBOL_MAP = { G: '⊞', A: '✈', N: '⚓' };
 
 function getUnitDisplaySymbol(unit) {
@@ -600,7 +606,7 @@ function renderUnitSymbol(provinceId, cx, cy) {
   };
 
   if (state.groupedDivisions) {
-    renderCounter(cx, cy, units.map((u) => getUnitDisplaySymbol(u)).join(''), units.length);
+    renderCounter(cx, cy, units.map((u) => u.symbol || UNIT_SYMBOL_BY_TYPE[u.type]).join(''), units.length);
     return;
   }
 
@@ -608,7 +614,7 @@ function renderUnitSymbol(provinceId, cx, cy) {
   const startY = cy - ((units.length - 1) * spacing) / 2;
   units.forEach((unit, index) => {
     const y = startY + index * spacing;
-    renderCounter(cx, y, getUnitDisplaySymbol(unit), 1);
+    renderCounter(cx, y, unit.symbol || UNIT_SYMBOL_BY_TYPE[unit.type] || '•', 1);
   });
 }
 
@@ -638,7 +644,7 @@ function renderProvinceInfo(provinceId) {
   const side = state.control[provinceId] || 'neutral';
 
   const unitText = units.length
-    ? units.map((u, idx) => `${idx + 1}. ${getUnitDisplaySymbol(u)} ${u.type.toUpperCase()} HP:${Math.max(0, Math.round(u.hp))} ORG:${Math.max(0, Math.round(u.org))}`).join('<br>')
+    ? units.map((u, idx) => `${idx + 1}. ${u.symbol || UNIT_SYMBOL_BY_TYPE[u.type] || '•'} ${u.type.toUpperCase()} HP:${Math.max(0, Math.round(u.hp))} ORG:${Math.max(0, Math.round(u.org))}`).join('<br>')
     : 'No stationed units';
 
   provinceInfo.innerHTML = `
