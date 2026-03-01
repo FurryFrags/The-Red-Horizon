@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Red Horizon: Act 1</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>The Red Horizon: Act 1</h1>
+      <p class="subtitle">Operational Warfare Prototype — Ground, Air, Naval · HP + Organization</p>
+    </header>
+
+    <section id="story-panel" class="panel">
+      <h2 id="story-title">Briefing</h2>
+      <p id="story-text"></p>
+      <div class="story-controls">
+        <button id="story-next">Continue</button>
+      </div>
+    </section>
+
+    <section id="game-panel" class="panel hidden">
+      <div class="hud">
+        <div>
+          <h2 id="mission-title"></h2>
+          <p id="mission-goal"></p>
+        </div>
+        <div class="turn-meta">
+          <p><strong>Turn:</strong> <span id="turn-count">1</span></p>
+          <p><strong>Phase:</strong> <span id="phase">NATO</span></p>
+        </div>
+      </div>
+
+      <div class="layout">
+        <div class="map-wrap">
+          <svg id="map" viewBox="0 0 1000 580" aria-label="Mission map"></svg>
+        </div>
+
+        <aside class="sidebar">
+          <h3>Selected Province</h3>
+          <div id="province-info">Select a province to inspect forces.</div>
+
+          <h3>Combat</h3>
+          <label for="target-select">Attack target:</label>
+          <select id="target-select"></select>
+          <button id="attack-btn">Attack</button>
+          <button id="end-turn-btn">End Turn</button>
+
+          <h3>Mechanics</h3>
+          <ul>
+            <li><strong>Blitzkrieg:</strong> Armor gains +30% damage in plains/desert and can move again if target breaks.</li>
+            <li><strong>Encirclement:</strong> Enemy provinces cut off from capitals lose 20 organization every turn.</li>
+            <li><strong>Air/Naval:</strong> Adds support fire and organization damage during attacks.</li>
+          </ul>
+
+          <div id="combat-log" class="log"></div>
+        </aside>
+      </div>
+
+      <div class="mission-controls">
+        <button id="next-mission-btn" class="hidden">Proceed to Next Mission</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>
