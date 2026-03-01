@@ -54,6 +54,12 @@ header h1 { margin-bottom: 0.2rem; }
   pointer-events: none;
 }
 
+.nation-backdrop {
+  fill: rgba(151, 174, 216, 0.14);
+  stroke: none;
+  pointer-events: none;
+}
+
 .route-link {
   stroke: rgba(255, 245, 120, 0.72);
   stroke-width: 2;
