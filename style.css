@@ -42,8 +42,8 @@ header h1 { margin-bottom: 0.2rem; }
 }
 .province:hover { filter: brightness(1.1); }
 .province.selected { stroke: #f6ff00; stroke-width: 2.8; }
-.province.nato { fill: #3784da; }
-.province.enemy { fill: #bf4c4c; }
+.province.nato { fill: #2f79ff; }
+.province.enemy { fill: #d83b3b; }
 .province.neutral { fill: #75818f; }
 
 
@@ -84,6 +84,16 @@ header h1 { margin-bottom: 0.2rem; }
 .unit-box.nato { stroke: #1f72d6; fill: #cfe5ff; }
 .unit-box.enemy { stroke: #b93737; fill: #ffd0d0; }
 .unit-label { font-weight: 700; fill: #121212; }
+
+.unit-count {
+  font-size: 9px;
+  fill: #101010;
+  font-weight: 700;
+}
+
+.unit-flag {
+  image-rendering: auto;
+}
 
 .sidebar { background: #111f3b; border-radius: 8px; padding: 0.8rem; border: 1px solid #2f4779; }
 .sidebar button, .story-controls button, .mission-controls button {
