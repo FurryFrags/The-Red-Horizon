@@ -68,7 +68,8 @@ const state = {
   units: {},
   currentMission: null,
   drag: null,
-  projectedById: {}
+  projectedById: {},
+  countryFeaturesByIso: {}
 };
 
 init();
@@ -78,7 +79,9 @@ async function init() {
     const missionRes = await fetch('data/missions.json');
     const missionData = await missionRes.json();
 
-    state.featuresById = await loadProvinceFeatures(missionData.missions);
+    const loadedFeatures = await loadProvinceFeatures(missionData.missions);
+    state.featuresById = loadedFeatures.featuresById;
+    state.countryFeaturesByIso = loadedFeatures.countryFeaturesByIso;
 
     state.story = missionData.story;
     state.missions = missionData.missions;
@@ -112,6 +115,16 @@ async function loadProvinceFeatures(missions) {
       .filter(Boolean)
   );
 
+  const nationToIso = Object.fromEntries(
+    Object.entries(COUNTRY_BOUNDARY_CATALOG).map(([iso, name]) => [name, iso])
+  );
+  missions.forEach((mission) => {
+    (mission.focusNations || []).forEach((nation) => {
+      const iso = nationToIso[nation];
+      if (iso) requiredCountries.add(iso);
+    });
+  });
+
   const boundaryByCountry = {};
   await Promise.all(Array.from(requiredCountries).map(async (iso) => {
     boundaryByCountry[iso] = await fetchCountryProvinces(iso);
@@ -142,7 +155,7 @@ async function loadProvinceFeatures(missions) {
     };
   });
 
-  return featuresById;
+  return { featuresById, countryFeaturesByIso: boundaryByCountry };
 }
 
 async function fetchCountryProvinces(iso) {
@@ -357,9 +370,27 @@ function renderMap() {
   state.projectedById = {};
 
   const mission = state.currentMission;
-  const relevant = Object.keys(mission.adjacency)
+  const missionProvinceIds = new Set(Object.keys(mission.adjacency || {}));
+  Object.values(mission.adjacency || {}).forEach((targets) => targets.forEach((targetId) => missionProvinceIds.add(targetId)));
+
+  const relevant = Array.from(missionProvinceIds)
     .map((id) => state.featuresById[id])
     .filter(Boolean);
+
+  const focusNationIsos = new Set(
+    (mission.focusNations || [])
+      .map((nation) => Object.entries(COUNTRY_BOUNDARY_CATALOG).find(([, name]) => name === nation)?.[0])
+      .filter(Boolean)
+  );
+
+  const backdropFeatures = Array.from(focusNationIsos).flatMap((iso) => {
+    const countryGeoJson = state.countryFeaturesByIso[iso];
+    return (countryGeoJson?.features || []).map((feature, index) => ({
+      id: `${iso}_${index}`,
+      rings: getFeatureOuterRings(feature).map((ring) => ring.map(projectPoint)),
+      backdrop: true
+    }));
+  });
 
   if (!relevant.length) return;
 
@@ -368,8 +399,31 @@ function renderMap() {
     rings: getFeatureOuterRings(f).map((ring) => ring.map(projectPoint))
   }));
 
-  const bounds = getBounds(projected.flatMap((f) => f.rings).flat());
+  const allProjected = backdropFeatures.concat(projected);
+  if (!allProjected.length) return;
+
+  const bounds = getBounds(allProjected.flatMap((f) => f.rings).flat());
   const scale = Math.min(940 / bounds.width, 520 / bounds.height);
+
+  backdropFeatures.forEach((feature) => {
+    const projectedRings = feature.rings.map((ring) => ring.map((pt) => ({
+      x: (pt.x - bounds.minX) * scale + 30,
+      y: (pt.y - bounds.minY) * scale + 30
+    })));
+
+    const pathData = projectedRings
+      .map((ring) => ring
+        .map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`)
+        .join(' ') + ' Z')
+      .join(' ');
+
+    const borderPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    borderPath.setAttribute('d', pathData);
+    borderPath.classList.add('nation-border');
+    mapSvg.appendChild(borderPath);
+  });
+
+  const provinceCentroids = {};
 
   projected.forEach((feature) => {
     const projectedRings = feature.rings.map((ring) => ring.map((pt) => ({
@@ -407,10 +461,37 @@ function renderMap() {
     mapSvg.appendChild(provincePath);
 
     const [cx, cy] = centroidFromRings(projectedRings);
-    renderUnitSymbol(feature.id, cx, cy);
+    provinceCentroids[feature.id] = [cx, cy];
+  });
+
+  renderMissionRoutes(provinceCentroids);
+  Object.entries(provinceCentroids).forEach(([provinceId, [cx, cy]]) => {
+    renderUnitSymbol(provinceId, cx, cy);
   });
 
   renderPathPreview();
+}
+
+function renderMissionRoutes(centroidByProvince) {
+  const seen = new Set();
+  Object.entries(state.currentMission.adjacency || {}).forEach(([from, targets]) => {
+    targets.forEach((to) => {
+      if (!centroidByProvince[from] || !centroidByProvince[to]) return;
+      const edgeId = [from, to].sort().join('::');
+      if (seen.has(edgeId)) return;
+      seen.add(edgeId);
+
+      const [x1, y1] = centroidByProvince[from];
+      const [x2, y2] = centroidByProvince[to];
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1.toFixed(1));
+      line.setAttribute('y1', y1.toFixed(1));
+      line.setAttribute('x2', x2.toFixed(1));
+      line.setAttribute('y2', y2.toFixed(1));
+      line.classList.add('route-link');
+      mapSvg.appendChild(line);
+    });
+  });
 }
 
 function renderUnitSymbol(provinceId, cx, cy) {
