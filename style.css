@@ -46,6 +46,15 @@ header h1 { margin-bottom: 0.2rem; }
 .province.enemy { fill: #bf4c4c; }
 .province.neutral { fill: #75818f; }
 
+.path-preview {
+  fill: none;
+  stroke: #f7ff58;
+  stroke-width: 3;
+  stroke-dasharray: 8 6;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px rgba(255, 245, 107, 0.7));
+}
+
 .nato-symbol {
   font-size: 11px;
   pointer-events: none;

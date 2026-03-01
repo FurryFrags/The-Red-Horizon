@@ -31,7 +31,9 @@ const state = {
   turn: 1,
   control: {},
   units: {},
-  currentMission: null
+  currentMission: null,
+  drag: null,
+  projectedById: {}
 };
 
 init();
@@ -132,6 +134,7 @@ function createProvinceUnits(side, provinceId) {
 
 function renderMap() {
   mapSvg.innerHTML = '';
+  state.projectedById = {};
 
   const mission = state.currentMission;
   const relevant = Object.keys(mission.adjacency)
@@ -142,20 +145,24 @@ function renderMap() {
 
   const projected = relevant.map((f) => ({
     id: f.properties.id,
-    points: f.geometry.coordinates[0].map(projectPoint)
+    rings: getFeatureOuterRings(f).map((ring) => ring.map(projectPoint))
   }));
 
-  const bounds = getBounds(projected.flatMap((f) => f.points));
+  const bounds = getBounds(projected.flatMap((f) => f.rings).flat());
   const scale = Math.min(940 / bounds.width, 520 / bounds.height);
 
   projected.forEach((feature) => {
-    const pathData = feature.points
-      .map((pt) => [
-        (pt.x - bounds.minX) * scale + 30,
-        (pt.y - bounds.minY) * scale + 30
-      ])
-      .map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`)
-      .join(' ') + ' Z';
+    const projectedRings = feature.rings.map((ring) => ring.map((pt) => ({
+      x: (pt.x - bounds.minX) * scale + 30,
+      y: (pt.y - bounds.minY) * scale + 30
+    })));
+    state.projectedById[feature.id] = projectedRings;
+
+    const pathData = projectedRings
+      .map((ring) => ring
+        .map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`)
+        .join(' ') + ' Z')
+      .join(' ');
 
     const provincePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     provincePath.setAttribute('d', pathData);
@@ -173,11 +180,17 @@ function renderMap() {
       buildTargetOptions(feature.id);
     });
 
+    provincePath.addEventListener('pointerdown', () => beginDrag(feature.id));
+    provincePath.addEventListener('pointerenter', () => updateDragTarget(feature.id));
+    provincePath.addEventListener('pointerup', () => endDrag(feature.id));
+
     mapSvg.appendChild(provincePath);
 
-    const [cx, cy] = centroidFromPath(pathData);
+    const [cx, cy] = centroidFromRings(projectedRings);
     renderUnitSymbol(feature.id, cx, cy);
   });
+
+  renderPathPreview();
 }
 
 function renderUnitSymbol(provinceId, cx, cy) {
@@ -259,10 +272,112 @@ function handleAttack() {
     return;
   }
 
-  resolveBattle(from, to, 'nato');
+  const attackRoute = findPath(from, to, (neighbor, current, goal) => {
+    if (neighbor === goal) return state.control[goal] === 'enemy';
+    return state.control[neighbor] === 'nato';
+  });
+
+  if (!attackRoute || attackRoute.length < 2) {
+    log('No viable path to attack target. Drag across connected friendly provinces to plan an attack lane.');
+    return;
+  }
+
+  const stagingProvince = attackRoute[attackRoute.length - 2];
+  if (stagingProvince !== from) {
+    transferUnits(from, stagingProvince, 'nato', attackRoute.slice(0, -1));
+  }
+
+  resolveBattle(stagingProvince, to, 'nato');
   renderMap();
-  renderProvinceInfo(from);
+  renderProvinceInfo(stagingProvince);
   checkVictory();
+}
+
+function beginDrag(fromProvince) {
+  if (state.phase !== 'NATO' || state.control[fromProvince] !== 'nato') return;
+  if (!(state.units[fromProvince] || []).length) return;
+  state.drag = { from: fromProvince, hover: fromProvince, path: [fromProvince] };
+  state.selected = fromProvince;
+  renderProvinceInfo(fromProvince);
+  buildTargetOptions(fromProvince);
+  renderMap();
+}
+
+function updateDragTarget(provinceId) {
+  if (!state.drag) return;
+  state.drag.hover = provinceId;
+  state.drag.path = findPath(state.drag.from, provinceId, (neighbor, current, goal) => {
+    if (neighbor === goal) return true;
+    return state.control[neighbor] !== 'enemy';
+  }) || [state.drag.from];
+  renderMap();
+}
+
+function endDrag(targetProvince) {
+  if (!state.drag) return;
+  const fromProvince = state.drag.from;
+  state.drag = null;
+
+  if (fromProvince === targetProvince) {
+    renderMap();
+    return;
+  }
+
+  executeDragCommand(fromProvince, targetProvince);
+}
+
+function executeDragCommand(from, to) {
+  const toSide = state.control[to] || 'neutral';
+  const movePath = findPath(from, to, (neighbor) => state.control[neighbor] !== 'enemy');
+
+  if (toSide === 'enemy') {
+    const attackPath = findPath(from, to, (neighbor, current, goal) => {
+      if (neighbor === goal) return true;
+      return state.control[neighbor] === 'nato';
+    });
+    if (!attackPath || attackPath.length < 2) {
+      log(`No attack lane from ${state.featuresById[from].properties.name} to ${state.featuresById[to].properties.name}.`);
+      renderMap();
+      return;
+    }
+
+    const stagingProvince = attackPath[attackPath.length - 2];
+    if (stagingProvince !== from) {
+      transferUnits(from, stagingProvince, 'nato', attackPath.slice(0, -1));
+      log(`Redeployed via ${formatPathNames(attackPath.slice(0, -1))}.`);
+    }
+    resolveBattle(stagingProvince, to, 'nato');
+    state.selected = stagingProvince;
+  } else {
+    if (!movePath || movePath.length < 2) {
+      log('No safe route for movement.');
+      renderMap();
+      return;
+    }
+    transferUnits(from, to, 'nato', movePath);
+    log(`Moved forces along ${formatPathNames(movePath)}.`);
+    state.selected = to;
+  }
+
+  renderMap();
+  renderProvinceInfo(state.selected);
+  buildTargetOptions(state.selected);
+  checkVictory();
+}
+
+function transferUnits(fromId, toId, side, path) {
+  const moving = state.units[fromId] || [];
+  if (!moving.length) {
+    log('No units available to move.');
+    return;
+  }
+
+  state.units[fromId] = [];
+  if (state.control[toId] === 'neutral') {
+    state.control[toId] = side;
+  }
+  if (!state.units[toId]) state.units[toId] = [];
+  state.units[toId] = state.units[toId].concat(moving.map((u) => ({ ...u, org: Math.max(10, u.org - Math.max(0, path.length - 1) * 2) })));
 }
 
 function resolveBattle(fromId, toId, attackerSide) {
@@ -424,6 +539,53 @@ function log(message) {
   logEl.prepend(p);
 }
 
+function renderPathPreview() {
+  if (!state.drag?.path || state.drag.path.length < 2) return;
+
+  const preview = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  const points = state.drag.path
+    .map((pid) => centroidFromRings(state.projectedById[pid] || []))
+    .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(' ');
+  preview.setAttribute('points', points);
+  preview.classList.add('path-preview');
+  mapSvg.appendChild(preview);
+}
+
+function findPath(fromId, toId, passable) {
+  if (fromId === toId) return [fromId];
+  const visited = new Set([fromId]);
+  const queue = [[fromId]];
+
+  while (queue.length) {
+    const path = queue.shift();
+    const current = path[path.length - 1];
+    const neighbors = state.currentMission.adjacency[current] || [];
+    for (const neighbor of neighbors) {
+      if (visited.has(neighbor)) continue;
+      if (!passable(neighbor, current, toId)) continue;
+
+      const nextPath = path.concat(neighbor);
+      if (neighbor === toId) return nextPath;
+      visited.add(neighbor);
+      queue.push(nextPath);
+    }
+  }
+
+  return null;
+}
+
+function formatPathNames(path) {
+  return path.map((pid) => state.featuresById[pid]?.properties?.name || pid).join(' → ');
+}
+
+function getFeatureOuterRings(feature) {
+  if (!feature?.geometry) return [];
+  if (feature.geometry.type === 'Polygon') return [feature.geometry.coordinates[0]];
+  if (feature.geometry.type === 'MultiPolygon') return feature.geometry.coordinates.map((poly) => poly[0]);
+  return [];
+}
+
 function projectPoint([lon, lat]) {
   return { x: lon + 180, y: 90 - lat };
 }
@@ -438,17 +600,8 @@ function getBounds(points) {
   return { minX, maxX, minY, maxY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
 }
 
-function centroidFromPath(pathData) {
-  const points = pathData
-    .replace(/M|L|Z/g, '')
-    .trim()
-    .split(/\s+/)
-    .reduce((arr, v, i, src) => {
-      if (i % 2 === 0) arr.push([Number(v), Number(src[i + 1])]);
-      return arr;
-    }, []);
-
-  const valid = points.filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+function centroidFromRings(rings) {
+  const valid = rings.flat().map((pt) => [pt.x, pt.y]).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
   const count = valid.length || 1;
   const sum = valid.reduce((acc, [x, y]) => [acc[0] + x, acc[1] + y], [0, 0]);
   return [sum[0] / count, sum[1] / count];
