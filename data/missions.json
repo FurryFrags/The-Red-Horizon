@@ -1,0 +1,137 @@
+{
+  "story": [
+    "Ally (NATO Commander): Welcome, Commander. You want to lead NATO's finest and master operational warfare.",
+    "Training begins in Poland. Dummy brigades with DUMMY flags hold lines while NATO units practice breakthroughs.",
+    "To the east, Belarus and Russian Lithuania glow red with CSTO banners. A warning of what is coming.",
+    "Intelligence map: Iran is unstable. First operation is to support Kurdish people in north-west Iran.",
+    "Mission chain unlocked: Kurdistan, Drone Intercept, Tehran Drive, Turkey Encirclement, CSTO Front, and Homeland Defense."
+  ],
+  "missions": [
+    {
+      "id": "training",
+      "name": "Poland Training",
+      "goal": "Defeat dummy troops in Warsaw and Lublin.",
+      "focusNations": ["Poland"],
+      "playerControlled": ["pl_warsaw"],
+      "enemyControlled": ["pl_lublin"],
+      "neutral": [],
+      "objectives": ["pl_lublin"],
+      "capitalBySide": { "nato": "pl_warsaw", "enemy": "pl_lublin" },
+      "adjacency": {
+        "pl_warsaw": ["pl_lublin"],
+        "pl_lublin": ["pl_warsaw"]
+      }
+    },
+    {
+      "id": "kurdistan",
+      "name": "Kurdistan Relief",
+      "goal": "Secure northern Iranian provinces and establish Kurdish autonomy corridors.",
+      "focusNations": ["Iran", "Turkey"],
+      "playerControlled": ["tr_van", "ir_urmia"],
+      "enemyControlled": ["ir_tabriz", "ir_kermanshah"],
+      "neutral": ["tr_ankara"],
+      "objectives": ["ir_tabriz"],
+      "capitalBySide": { "nato": "tr_van", "enemy": "ir_tehran" },
+      "adjacency": {
+        "tr_van": ["ir_urmia", "ir_tabriz"],
+        "ir_urmia": ["tr_van", "ir_tabriz", "ir_kermanshah"],
+        "ir_tabriz": ["tr_van", "ir_urmia", "ir_tehran"],
+        "ir_kermanshah": ["ir_urmia", "ir_tehran"],
+        "ir_tehran": ["ir_tabriz", "ir_kermanshah", "ir_isfahan"],
+        "tr_ankara": ["tr_van"]
+      }
+    },
+    {
+      "id": "china",
+      "name": "Drone Intercept",
+      "goal": "Intercept Chinese drone + nuclear tech transfer through north-east Iran.",
+      "focusNations": ["Iran", "Afghanistan", "China"],
+      "playerControlled": ["ir_tehran"],
+      "enemyControlled": ["ir_mashhad", "af_herat", "cn_dandong"],
+      "neutral": ["ir_isfahan"],
+      "objectives": ["ir_mashhad"],
+      "capitalBySide": { "nato": "ir_tehran", "enemy": "cn_dandong" },
+      "adjacency": {
+        "ir_tehran": ["ir_isfahan", "ir_mashhad"],
+        "ir_isfahan": ["ir_tehran", "ir_chabahar"],
+        "ir_mashhad": ["ir_tehran", "af_herat"],
+        "af_herat": ["ir_mashhad", "af_kabul"],
+        "af_kabul": ["af_herat"],
+        "cn_dandong": ["af_kabul"]
+      }
+    },
+    {
+      "id": "arab",
+      "name": "Tehran Drive",
+      "goal": "Iraq and Afghanistan back Iran. Reach and hold Tehran.",
+      "focusNations": ["Iran", "Iraq", "Afghanistan"],
+      "playerControlled": ["ir_kermanshah", "iq_basra"],
+      "enemyControlled": ["iq_baghdad", "af_herat", "ir_tehran"],
+      "neutral": ["ir_isfahan"],
+      "objectives": ["ir_tehran"],
+      "capitalBySide": { "nato": "iq_basra", "enemy": "ir_tehran" },
+      "adjacency": {
+        "iq_basra": ["iq_baghdad", "ir_kermanshah"],
+        "iq_baghdad": ["iq_basra", "ir_kermanshah", "ir_tehran"],
+        "ir_kermanshah": ["iq_basra", "iq_baghdad", "ir_tehran"],
+        "ir_tehran": ["ir_kermanshah", "ir_isfahan", "af_herat"],
+        "af_herat": ["ir_tehran"],
+        "ir_isfahan": ["ir_tehran"]
+      }
+    },
+    {
+      "id": "turkey",
+      "name": "Turkey Encirclement",
+      "goal": "Use Turkey + southern NATO + Kurdish forces to encircle Iraqi-Iranian invasion spearheads.",
+      "focusNations": ["Turkey", "Iran", "Iraq"],
+      "playerControlled": ["tr_ankara", "tr_van", "ir_urmia"],
+      "enemyControlled": ["ir_tabriz", "ir_kermanshah", "iq_baghdad"],
+      "neutral": ["iq_basra"],
+      "objectives": ["ir_tabriz", "iq_baghdad"],
+      "capitalBySide": { "nato": "tr_ankara", "enemy": "iq_baghdad" },
+      "adjacency": {
+        "tr_ankara": ["tr_van"],
+        "tr_van": ["tr_ankara", "ir_urmia", "ir_tabriz"],
+        "ir_urmia": ["tr_van", "ir_tabriz", "ir_kermanshah"],
+        "ir_tabriz": ["tr_van", "ir_urmia", "ir_kermanshah"],
+        "ir_kermanshah": ["ir_urmia", "ir_tabriz", "iq_baghdad"],
+        "iq_baghdad": ["ir_kermanshah", "iq_basra"],
+        "iq_basra": ["iq_baghdad"]
+      }
+    },
+    {
+      "id": "csto",
+      "name": "CSTO Northern Front",
+      "goal": "Push through weaker North Korean axis and encircle CSTO + Chinese armies, or hold until Polish army arrives.",
+      "focusNations": ["North Korea", "China", "Poland", "Turkey"],
+      "playerControlled": ["kp_hamhung", "tr_ankara"],
+      "enemyControlled": ["kp_pyongyang", "cn_dandong"],
+      "neutral": ["pl_warsaw"],
+      "objectives": ["kp_pyongyang", "cn_dandong"],
+      "capitalBySide": { "nato": "tr_ankara", "enemy": "cn_dandong" },
+      "adjacency": {
+        "kp_hamhung": ["kp_pyongyang"],
+        "kp_pyongyang": ["kp_hamhung", "cn_dandong"],
+        "cn_dandong": ["kp_pyongyang", "pl_warsaw"],
+        "pl_warsaw": ["cn_dandong", "tr_ankara"],
+        "tr_ankara": ["pl_warsaw"]
+      }
+    },
+    {
+      "id": "homeland",
+      "name": "Finale: Defend the US",
+      "goal": "Stop all-out Iranian invasion and Chinese artillery strikes on US provinces.",
+      "focusNations": ["United States"],
+      "playerControlled": ["us_washington", "us_atlanta"],
+      "enemyControlled": ["us_norfolk"],
+      "neutral": [],
+      "objectives": ["us_norfolk"],
+      "capitalBySide": { "nato": "us_washington", "enemy": "us_norfolk" },
+      "adjacency": {
+        "us_washington": ["us_norfolk", "us_atlanta"],
+        "us_norfolk": ["us_washington", "us_atlanta"],
+        "us_atlanta": ["us_washington", "us_norfolk"]
+      }
+    }
+  ]
+}

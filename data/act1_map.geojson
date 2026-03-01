@@ -1,0 +1,33 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "id": "pl_warsaw", "name": "Warsaw Training Zone", "nation": "Poland", "terrain": "plains", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[19.0, 53.0], [22.5, 53.0], [22.5, 51.0], [19.0, 51.0], [19.0, 53.0]]] } },
+    { "type": "Feature", "properties": { "id": "pl_lublin", "name": "Lublin Dummy Range", "nation": "Poland", "terrain": "plains", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[22.5, 53.0], [25.5, 53.0], [25.5, 51.0], [22.5, 51.0], [22.5, 53.0]]] } },
+
+    { "type": "Feature", "properties": { "id": "ir_tabriz", "name": "Tabriz", "nation": "Iran", "terrain": "mountain", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[45.0, 39.5], [48.0, 39.5], [48.0, 37.5], [45.0, 37.5], [45.0, 39.5]]] } },
+    { "type": "Feature", "properties": { "id": "ir_urmia", "name": "Urmia", "nation": "Iran", "terrain": "mountain", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[42.5, 38.5], [45.0, 38.5], [45.0, 36.5], [42.5, 36.5], [42.5, 38.5]]] } },
+    { "type": "Feature", "properties": { "id": "ir_kermanshah", "name": "Kermanshah", "nation": "Iran", "terrain": "hills", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[45.5, 36.5], [48.5, 36.5], [48.5, 34.0], [45.5, 34.0], [45.5, 36.5]]] } },
+    { "type": "Feature", "properties": { "id": "ir_tehran", "name": "Tehran", "nation": "Iran", "terrain": "urban", "capital": true }, "geometry": { "type": "Polygon", "coordinates": [[[50.0, 37.5], [53.0, 37.5], [53.0, 35.2], [50.0, 35.2], [50.0, 37.5]]] } },
+    { "type": "Feature", "properties": { "id": "ir_isfahan", "name": "Isfahan", "nation": "Iran", "terrain": "desert", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[50.0, 35.2], [53.2, 35.2], [53.2, 32.5], [50.0, 32.5], [50.0, 35.2]]] } },
+    { "type": "Feature", "properties": { "id": "ir_mashhad", "name": "Mashhad", "nation": "Iran", "terrain": "plains", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[57.0, 38.0], [60.8, 38.0], [60.8, 35.0], [57.0, 35.0], [57.0, 38.0]]] } },
+    { "type": "Feature", "properties": { "id": "ir_chabahar", "name": "Chabahar Port", "nation": "Iran", "terrain": "coastal", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[59.0, 27.5], [62.0, 27.5], [62.0, 24.8], [59.0, 24.8], [59.0, 27.5]]] } },
+
+    { "type": "Feature", "properties": { "id": "iq_basra", "name": "Basra", "nation": "Iraq", "terrain": "coastal", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[47.0, 32.8], [49.2, 32.8], [49.2, 30.4], [47.0, 30.4], [47.0, 32.8]]] } },
+    { "type": "Feature", "properties": { "id": "iq_baghdad", "name": "Baghdad Axis", "nation": "Iraq", "terrain": "urban", "capital": true }, "geometry": { "type": "Polygon", "coordinates": [[[43.0, 34.8], [46.4, 34.8], [46.4, 32.0], [43.0, 32.0], [43.0, 34.8]]] } },
+
+    { "type": "Feature", "properties": { "id": "af_herat", "name": "Herat", "nation": "Afghanistan", "terrain": "mountain", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[60.8, 35.0], [63.8, 35.0], [63.8, 33.0], [60.8, 33.0], [60.8, 35.0]]] } },
+    { "type": "Feature", "properties": { "id": "af_kabul", "name": "Kabul Corridor", "nation": "Afghanistan", "terrain": "mountain", "capital": true }, "geometry": { "type": "Polygon", "coordinates": [[[66.0, 35.2], [69.5, 35.2], [69.5, 33.0], [66.0, 33.0], [66.0, 35.2]]] } },
+
+    { "type": "Feature", "properties": { "id": "tr_van", "name": "Van Front", "nation": "Turkey", "terrain": "mountain", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[42.2, 39.5], [45.0, 39.5], [45.0, 37.8], [42.2, 37.8], [42.2, 39.5]]] } },
+    { "type": "Feature", "properties": { "id": "tr_ankara", "name": "Ankara Reserve", "nation": "Turkey", "terrain": "plains", "capital": true }, "geometry": { "type": "Polygon", "coordinates": [[[31.5, 41.0], [35.8, 41.0], [35.8, 38.3], [31.5, 38.3], [31.5, 41.0]]] } },
+
+    { "type": "Feature", "properties": { "id": "kp_hamhung", "name": "Hamhung", "nation": "North Korea", "terrain": "mountain", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[127.0, 40.8], [129.5, 40.8], [129.5, 38.8], [127.0, 38.8], [127.0, 40.8]]] } },
+    { "type": "Feature", "properties": { "id": "kp_pyongyang", "name": "Pyongyang Axis", "nation": "North Korea", "terrain": "urban", "capital": true }, "geometry": { "type": "Polygon", "coordinates": [[[124.8, 40.8], [127.0, 40.8], [127.0, 38.6], [124.8, 38.6], [124.8, 40.8]]] } },
+
+    { "type": "Feature", "properties": { "id": "cn_dandong", "name": "Dandong", "nation": "China", "terrain": "plains", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[123.0, 41.8], [125.8, 41.8], [125.8, 39.6], [123.0, 39.6], [123.0, 41.8]]] } },
+
+    { "type": "Feature", "properties": { "id": "us_norfolk", "name": "Norfolk", "nation": "United States", "terrain": "coastal", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[-78.8, 38.2], [-75.0, 38.2], [-75.0, 35.6], [-78.8, 35.6], [-78.8, 38.2]]] } },
+    { "type": "Feature", "properties": { "id": "us_washington", "name": "Washington D.C.", "nation": "United States", "terrain": "urban", "capital": true }, "geometry": { "type": "Polygon", "coordinates": [[[-78.8, 40.8], [-75.2, 40.8], [-75.2, 38.2], [-78.8, 38.2], [-78.8, 40.8]]] } },
+    { "type": "Feature", "properties": { "id": "us_atlanta", "name": "Atlanta Interior", "nation": "United States", "terrain": "plains", "capital": false }, "geometry": { "type": "Polygon", "coordinates": [[[-85.3, 35.8], [-81.2, 35.8], [-81.2, 32.6], [-85.3, 32.6], [-85.3, 35.8]]] } }
+  ]
+}
