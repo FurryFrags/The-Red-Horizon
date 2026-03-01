@@ -78,6 +78,7 @@ const state = {
   featuresById: {},
   missionIndex: 0,
   selected: null,
+  selectedUnitId: null,
   phase: 'NATO',
   turn: 1,
   control: {},
@@ -378,6 +379,7 @@ function loadMission(index) {
   state.missionIndex = index;
   state.currentMission = mission;
   state.selected = null;
+  state.selectedUnitId = null;
   state.pendingMoveFrom = null;
   state.phase = 'NATO';
   state.turn = 1;
@@ -549,14 +551,13 @@ function renderMap() {
     provincePath.addEventListener('mousedown', (event) => {
       if (event.button !== 0) return;
       if (state.phase !== 'NATO') return;
-      if (state.control[feature.id] !== 'nato') return;
-      if ((state.units[feature.id] || []).length === 0) return;
+      if (!state.selected) return;
+      if (state.control[state.selected] !== 'nato') return;
+      if ((state.units[state.selected] || []).length === 0) return;
+      if (feature.id === state.selected) return;
 
-      state.pendingMoveFrom = feature.id;
-      state.selected = feature.id;
+      state.pendingMoveFrom = state.selected;
       state.dragMoveActive = true;
-      renderProvinceInfo(feature.id);
-      buildTargetOptions(feature.id);
       renderMap();
     });
 
@@ -572,13 +573,15 @@ function renderMap() {
       renderMap();
     });
 
-    provincePath.addEventListener('click', () => {
+    provincePath.addEventListener('click', async () => {
       if (state.dragMoveActive) return;
+      if (!state.selected) {
+        log('Select a NATO unit first, then click a destination province.');
+        return;
+      }
+      if (feature.id === state.selected) return;
 
-      state.selected = feature.id;
-      renderMap();
-      renderProvinceInfo(feature.id);
-      buildTargetOptions(feature.id);
+      await executeMoveCommand(state.selected, feature.id);
     });
 
     mapSvg.appendChild(provincePath);
@@ -623,9 +626,11 @@ function renderUnitSymbol(provinceId, cx, cy) {
   const renderCounter = (x, y, unit, unitCount) => {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     group.classList.add('nato-symbol', side);
-    if (state.pendingMoveFrom === provinceId) {
+    if (state.pendingMoveFrom === provinceId || (state.selected === provinceId && state.selectedUnitId === unit.id)) {
       group.classList.add('active-move-source');
     }
+    group.dataset.provinceId = provinceId;
+    group.dataset.unitId = unit.id;
 
     const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     frame.setAttribute('x', (x - 25).toString());
@@ -638,6 +643,13 @@ function renderUnitSymbol(provinceId, cx, cy) {
     const iconDrawer = NATO_SYMBOL_DRAWERS[unit.type] || NATO_SYMBOL_DRAWERS.ground;
     iconDrawer(group, x, y);
 
+    const factionFlag = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    factionFlag.setAttribute('x', (x - 20).toString());
+    factionFlag.setAttribute('y', (y - 6).toString());
+    factionFlag.classList.add('unit-flag');
+    factionFlag.textContent = getUnitFlagLabel(provinceId, side);
+    group.appendChild(factionFlag);
+
     if (unitCount > 1) {
       const count = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       count.setAttribute('x', (x + 19).toString());
@@ -646,6 +658,11 @@ function renderUnitSymbol(provinceId, cx, cy) {
       count.textContent = String(unitCount);
       group.appendChild(count);
     }
+
+    group.addEventListener('click', (event) => {
+      event.stopPropagation();
+      handleUnitClick(provinceId, unit.id);
+    });
 
     mapSvg.appendChild(group);
   };
@@ -662,6 +679,31 @@ function renderUnitSymbol(provinceId, cx, cy) {
     const y = startY + index * spacing;
     renderCounter(cx, y, unit, 1);
   });
+}
+
+function getUnitFlagLabel(provinceId, side) {
+  if (side === 'nato') return '⚑ NATO';
+  const iso = PROVINCE_CATALOG[provinceId]?.iso;
+  if (iso === 'IRN') return '🇮🇷 IRN';
+  if (iso === 'CHN') return '🇨🇳 CHN';
+  return '☭ CSTO';
+}
+
+function handleUnitClick(provinceId, unitId) {
+  if (state.phase !== 'NATO') {
+    log('Wait for NATO phase to issue unit commands.');
+    return;
+  }
+  if (state.control[provinceId] !== 'nato') {
+    log('You can only command NATO units on your turn.');
+    return;
+  }
+
+  state.selected = provinceId;
+  state.selectedUnitId = unitId;
+  renderMap();
+  renderProvinceInfo(provinceId);
+  buildTargetOptions(provinceId);
 }
 
 function buildTargetOptions(provinceId) {
@@ -691,7 +733,10 @@ function renderProvinceInfo(provinceId) {
   const sideLabel = side === 'nato' ? 'ALLY' : 'ENEMY';
 
   const unitText = units.length
-    ? units.map((u, idx) => `${idx + 1}. ${u.symbol || UNIT_SYMBOL_BY_TYPE[u.type] || '•'} ${u.type.toUpperCase()} HP:${Math.max(0, Math.round(u.hp))} ORG:${Math.max(0, Math.round(u.org))}`).join('<br>')
+    ? units.map((u, idx) => {
+      const selectedMarker = u.id === state.selectedUnitId ? ' ⭐' : '';
+      return `${idx + 1}. ${u.symbol || UNIT_SYMBOL_BY_TYPE[u.type] || '•'} ${u.type.toUpperCase()} HP:${Math.max(0, Math.round(u.hp))} ORG:${Math.max(0, Math.round(u.org))}${selectedMarker}`;
+    }).join('<br>')
     : 'No stationed units';
 
   provinceInfo.innerHTML = `
@@ -712,7 +757,7 @@ async function handleAttack() {
   const from = state.selected;
   const to = targetSelect.value;
   if (!from || !to) {
-    log('Select a NATO province and valid enemy target.');
+    log('Select a NATO unit and valid enemy target.');
     return;
   }
 
@@ -779,6 +824,9 @@ async function executeMoveCommand(from, to) {
     log(`Moved forces along ${formatPathNames(path)}.`);
     state.selected = to;
   }
+
+  const selectedUnits = state.units[state.selected] || [];
+  state.selectedUnitId = selectedUnits[0]?.id || null;
 
   renderMap();
   renderProvinceInfo(state.selected);

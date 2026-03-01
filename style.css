@@ -37,7 +37,7 @@ header h1 { margin-bottom: 0.2rem; }
 .province {
   stroke: #0b0f1e;
   stroke-width: 1.2;
-  cursor: pointer;
+  cursor: crosshair;
   transition: filter 0.2s, stroke-width 0.2s;
 }
 .province:hover { filter: brightness(1.1); }
@@ -70,7 +70,10 @@ header h1 { margin-bottom: 0.2rem; }
   pointer-events: none;
 }
 
-.nato-symbol { pointer-events: none; }
+.nato-symbol {
+  pointer-events: visiblePainted;
+  cursor: pointer;
+}
 
 .nato-symbol.active-move-source .unit-frame { filter: drop-shadow(0 0 3px rgba(245, 255, 95, 0.9)); }
 
@@ -88,6 +91,12 @@ header h1 { margin-bottom: 0.2rem; }
 
 .unit-count {
   font-size: 9px;
+  fill: #101010;
+  font-weight: 700;
+}
+
+.unit-flag {
+  font-size: 8px;
   fill: #101010;
   font-weight: 700;
 }
