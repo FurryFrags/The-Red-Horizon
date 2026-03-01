@@ -83,11 +83,46 @@ const state = {
   control: {},
   units: {},
   currentMission: null,
-  drag: null,
+  pendingMoveFrom: null,
   projectedById: {},
   countryFeaturesByIso: {},
   groupedDivisions: true,
   combatTimer: null
+};
+
+const NATO_SYMBOL_DRAWERS = {
+  ground(group, centerX, centerY) {
+    const lineA = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    lineA.setAttribute('x1', (centerX - 10).toString());
+    lineA.setAttribute('y1', (centerY - 8).toString());
+    lineA.setAttribute('x2', (centerX + 10).toString());
+    lineA.setAttribute('y2', (centerY + 8).toString());
+    lineA.classList.add('unit-icon');
+    group.appendChild(lineA);
+
+    const lineB = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    lineB.setAttribute('x1', (centerX + 10).toString());
+    lineB.setAttribute('y1', (centerY - 8).toString());
+    lineB.setAttribute('x2', (centerX - 10).toString());
+    lineB.setAttribute('y2', (centerY + 8).toString());
+    lineB.classList.add('unit-icon');
+    group.appendChild(lineB);
+  },
+  air(group, centerX, centerY) {
+    const wing = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    wing.setAttribute('d', `M ${centerX - 13} ${centerY + 4} L ${centerX} ${centerY - 9} L ${centerX + 13} ${centerY + 4}`);
+    wing.classList.add('unit-icon');
+    group.appendChild(wing);
+  },
+  naval(group, centerX, centerY) {
+    const hull = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+    hull.setAttribute('cx', centerX.toString());
+    hull.setAttribute('cy', centerY.toString());
+    hull.setAttribute('rx', '12');
+    hull.setAttribute('ry', '6');
+    hull.classList.add('unit-icon');
+    group.appendChild(hull);
+  }
 };
 
 init();
@@ -339,6 +374,7 @@ function loadMission(index) {
   state.missionIndex = index;
   state.currentMission = mission;
   state.selected = null;
+  state.pendingMoveFrom = null;
   state.phase = 'NATO';
   state.turn = 1;
   state.control = {};
@@ -432,10 +468,13 @@ function renderMap() {
     if (iso) focusNationIsos.add(iso);
   });
 
+  const countryControlByIso = computeCountryControl(Array.from(missionProvinceIds));
+
   const backdropFeatures = Array.from(focusNationIsos).flatMap((iso) => {
     const countryGeoJson = state.countryFeaturesByIso[iso];
     return (countryGeoJson?.features || []).map((feature, index) => ({
       id: `${iso}_${index}`,
+      iso,
       rings: getFeatureOuterRings(feature).map((ring) => ring.map(projectPoint)),
       backdrop: true
     }));
@@ -466,14 +505,16 @@ function renderMap() {
         .join(' ') + ' Z')
       .join(' ');
 
+    const controlClass = countryControlByIso[feature.iso] || 'neutral';
+
     const backdropPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     backdropPath.setAttribute('d', pathData);
-    backdropPath.classList.add('nation-backdrop');
+    backdropPath.classList.add('nation-backdrop', controlClass);
     mapSvg.appendChild(backdropPath);
 
     const borderPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     borderPath.setAttribute('d', pathData);
-    borderPath.classList.add('nation-border');
+    borderPath.classList.add('nation-border', controlClass);
     mapSvg.appendChild(borderPath);
   });
 
@@ -501,16 +542,17 @@ function renderMap() {
       provincePath.classList.add('selected');
     }
 
-    provincePath.addEventListener('click', () => {
+    provincePath.addEventListener('click', async () => {
+      if (state.pendingMoveFrom && state.pendingMoveFrom !== feature.id) {
+        await executeMoveCommand(state.pendingMoveFrom, feature.id);
+        return;
+      }
+
       state.selected = feature.id;
       renderMap();
       renderProvinceInfo(feature.id);
       buildTargetOptions(feature.id);
     });
-
-    provincePath.addEventListener('pointerdown', () => beginDrag(feature.id));
-    provincePath.addEventListener('pointerenter', () => updateDragTarget(feature.id));
-    provincePath.addEventListener('pointerup', () => endDrag(feature.id));
 
     mapSvg.appendChild(provincePath);
 
@@ -522,8 +564,6 @@ function renderMap() {
   Object.entries(provinceCentroids).forEach(([provinceId, [cx, cy]]) => {
     renderUnitSymbol(provinceId, cx, cy);
   });
-
-  renderPathPreview();
 }
 
 function renderMissionRoutes(centroidByProvince) {
@@ -553,44 +593,40 @@ function renderUnitSymbol(provinceId, cx, cy) {
   const units = state.units[provinceId] || [];
   if (!units.length || side === 'neutral') return;
 
-  const provinceIso = PROVINCE_CATALOG[provinceId]?.iso?.toLowerCase();
-  const flagUrl = provinceIso ? `https://flagcdn.com/w20/${provinceIso}.png` : null;
-
-  const renderCounter = (x, y, label, unitCount) => {
+  const renderCounter = (x, y, unit, unitCount) => {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.classList.add('nato-symbol');
-
-    const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    box.setAttribute('x', (x - 24).toString());
-    box.setAttribute('y', (y - 12).toString());
-    box.setAttribute('width', '48');
-    box.setAttribute('height', '24');
-    box.classList.add('unit-box', side);
-    group.appendChild(box);
-
-    if (flagUrl) {
-      const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-      image.setAttribute('href', flagUrl);
-      image.setAttribute('x', (x - 22).toString());
-      image.setAttribute('y', (y - 10).toString());
-      image.setAttribute('width', '10');
-      image.setAttribute('height', '8');
-      image.classList.add('unit-flag');
-      group.appendChild(image);
+    group.classList.add('nato-symbol', side);
+    if (state.pendingMoveFrom === provinceId) {
+      group.classList.add('active-move-source');
     }
 
-    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    txt.setAttribute('x', (x + 1).toString());
-    txt.setAttribute('y', (y + 4).toString());
-    txt.setAttribute('text-anchor', 'middle');
-    txt.classList.add('unit-label');
-    txt.textContent = label;
-    group.appendChild(txt);
+    if (state.phase === 'NATO' && side === 'nato') {
+      group.classList.add('clickable');
+      group.addEventListener('click', (event) => {
+        event.stopPropagation();
+        state.pendingMoveFrom = provinceId;
+        state.selected = provinceId;
+        renderProvinceInfo(provinceId);
+        buildTargetOptions(provinceId);
+        renderMap();
+      });
+    }
+
+    const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    frame.setAttribute('x', (x - 25).toString());
+    frame.setAttribute('y', (y - 14).toString());
+    frame.setAttribute('width', '50');
+    frame.setAttribute('height', '28');
+    frame.classList.add('unit-frame', side);
+    group.appendChild(frame);
+
+    const iconDrawer = NATO_SYMBOL_DRAWERS[unit.type] || NATO_SYMBOL_DRAWERS.ground;
+    iconDrawer(group, x, y);
 
     if (unitCount > 1) {
       const count = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      count.setAttribute('x', (x + 17).toString());
-      count.setAttribute('y', (y + 10).toString());
+      count.setAttribute('x', (x + 19).toString());
+      count.setAttribute('y', (y + 12).toString());
       count.classList.add('unit-count');
       count.textContent = String(unitCount);
       group.appendChild(count);
@@ -600,15 +636,16 @@ function renderUnitSymbol(provinceId, cx, cy) {
   };
 
   if (state.groupedDivisions) {
-    renderCounter(cx, cy, units.map((u) => u.symbol || UNIT_SYMBOL_BY_TYPE[u.type]).join(''), units.length);
+    const dominantUnit = units[0] || { type: 'ground' };
+    renderCounter(cx, cy, dominantUnit, units.length);
     return;
   }
 
-  const spacing = 28;
+  const spacing = 32;
   const startY = cy - ((units.length - 1) * spacing) / 2;
   units.forEach((unit, index) => {
     const y = startY + index * spacing;
-    renderCounter(cx, y, unit.symbol || UNIT_SYMBOL_BY_TYPE[unit.type] || '•', 1);
+    renderCounter(cx, y, unit, 1);
   });
 }
 
@@ -669,7 +706,7 @@ async function handleAttack() {
   });
 
   if (!attackRoute || attackRoute.length < 2) {
-    log('No viable path to attack target. Drag across connected friendly provinces to plan an attack lane.');
+    log('No viable path to attack target through connected friendly provinces.');
     return;
   }
 
@@ -684,40 +721,11 @@ async function handleAttack() {
   checkVictory();
 }
 
-function beginDrag(fromProvince) {
-  if (state.phase !== 'NATO' || state.control[fromProvince] !== 'nato') return;
-  if (!(state.units[fromProvince] || []).length) return;
-  state.drag = { from: fromProvince, hover: fromProvince, path: [fromProvince] };
-  state.selected = fromProvince;
-  renderProvinceInfo(fromProvince);
-  buildTargetOptions(fromProvince);
-  renderMap();
-}
 
-function updateDragTarget(provinceId) {
-  if (!state.drag) return;
-  state.drag.hover = provinceId;
-  state.drag.path = findPath(state.drag.from, provinceId, (neighbor, current, goal) => {
-    if (neighbor === goal) return true;
-    return state.control[neighbor] !== 'enemy';
-  }) || [state.drag.from];
-  renderMap();
-}
 
-async function endDrag(targetProvince) {
-  if (!state.drag) return;
-  const fromProvince = state.drag.from;
-  state.drag = null;
 
-  if (fromProvince === targetProvince) {
-    renderMap();
-    return;
-  }
-
-  await executeDragCommand(fromProvince, targetProvince);
-}
-
-async function executeDragCommand(from, to) {
+async function executeMoveCommand(from, to) {
+  state.pendingMoveFrom = null;
   const toSide = state.control[to] || 'neutral';
   const movePath = findPath(from, to, (neighbor) => state.control[neighbor] !== 'enemy');
 
@@ -956,17 +964,22 @@ function log(message) {
   logEl.prepend(p);
 }
 
-function renderPathPreview() {
-  if (!state.drag?.path || state.drag.path.length < 2) return;
 
-  const preview = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-  const points = state.drag.path
-    .map((pid) => centroidFromRings(state.projectedById[pid] || []))
-    .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
-    .join(' ');
-  preview.setAttribute('points', points);
-  preview.classList.add('path-preview');
-  mapSvg.appendChild(preview);
+function computeCountryControl(provinceIds) {
+  const tallies = {};
+  provinceIds.forEach((provinceId) => {
+    const iso = PROVINCE_CATALOG[provinceId]?.iso;
+    if (!iso) return;
+    if (!tallies[iso]) tallies[iso] = { nato: 0, enemy: 0, neutral: 0 };
+    const side = state.control[provinceId] || 'neutral';
+    tallies[iso][side] += 1;
+  });
+
+  return Object.fromEntries(Object.entries(tallies).map(([iso, counts]) => {
+    if (counts.enemy > counts.nato) return [iso, 'enemy'];
+    if (counts.nato > counts.enemy) return [iso, 'nato'];
+    return [iso, 'neutral'];
+  }));
 }
 
 function findPath(fromId, toId, passable) {

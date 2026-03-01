@@ -46,19 +46,22 @@ header h1 { margin-bottom: 0.2rem; }
 .province.enemy { fill: #d83b3b; }
 .province.neutral { fill: #75818f; }
 
-
 .nation-border {
   fill: none;
-  stroke: rgba(165, 192, 255, 0.55);
-  stroke-width: 1;
+  stroke-width: 2.4;
   pointer-events: none;
 }
+.nation-border.nato { stroke: rgba(65, 144, 255, 0.9); }
+.nation-border.enemy { stroke: rgba(255, 76, 76, 0.9); }
+.nation-border.neutral { stroke: rgba(165, 192, 255, 0.55); }
 
 .nation-backdrop {
-  fill: rgba(151, 174, 216, 0.14);
   stroke: none;
   pointer-events: none;
 }
+.nation-backdrop.nato { fill: rgba(69, 148, 255, 0.16); }
+.nation-backdrop.enemy { fill: rgba(255, 70, 70, 0.16); }
+.nation-backdrop.neutral { fill: rgba(151, 174, 216, 0.14); }
 
 .route-link {
   stroke: rgba(255, 245, 120, 0.72);
@@ -67,32 +70,26 @@ header h1 { margin-bottom: 0.2rem; }
   pointer-events: none;
 }
 
-.path-preview {
-  fill: none;
-  stroke: #f7ff58;
-  stroke-width: 3;
-  stroke-dasharray: 8 6;
-  pointer-events: none;
-  filter: drop-shadow(0 0 3px rgba(255, 245, 107, 0.7));
-}
+.nato-symbol { pointer-events: all; }
+.nato-symbol.clickable { cursor: pointer; }
+.nato-symbol.active-move-source .unit-frame { filter: drop-shadow(0 0 3px rgba(245, 255, 95, 0.9)); }
 
-.nato-symbol {
-  font-size: 11px;
-  pointer-events: none;
+.unit-frame { fill: #ffffff; stroke-width: 2; rx: 4; ry: 4; }
+.unit-frame.nato { stroke: #1f72d6; fill: #cfe5ff; }
+.unit-frame.enemy { stroke: #b93737; fill: #ffd0d0; }
+
+.unit-icon {
+  fill: none;
+  stroke: #111;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.unit-box { fill: #ffffff; stroke-width: 1.4; rx: 4; ry: 4; }
-.unit-box.nato { stroke: #1f72d6; fill: #cfe5ff; }
-.unit-box.enemy { stroke: #b93737; fill: #ffd0d0; }
-.unit-label { font-weight: 700; fill: #121212; }
 
 .unit-count {
   font-size: 9px;
   fill: #101010;
   font-weight: 700;
-}
-
-.unit-flag {
-  image-rendering: auto;
 }
 
 .sidebar { background: #111f3b; border-radius: 8px; padding: 0.8rem; border: 1px solid #2f4779; }
